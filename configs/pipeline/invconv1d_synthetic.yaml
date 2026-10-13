@@ -1,0 +1,59 @@
+# 合成 CF/PW/PRI：采样、划分、输入长度与补长策略由本 pipeline 控制。
+# train/inference 字段可在入口的 model.train()/model.infer() 中覆盖，代码优先。
+# inference.progress 控制读取和预测进度；labels_file=null 只预测。
+name: invconv1d_synthetic
+task: classify
+data: datasets/synthetic_radar_overlap/data.yaml
+model: configs/model/invconv1d.yaml
+output_dir: results/invconv1d_synthetic
+dataset:
+  sample_ratio: 0.01
+  train_ratio: 0.8
+  val_ratio: 0.2
+  seed: 2026
+  stratified: true
+sequence_length: 256
+length_policy:
+  short: zero
+  long: head
+train:
+  num_classes: null  # 训练类别数；null 读取训练 data.yaml，可填写 10、100 等正整数
+  resume: false
+  resume_checkpoint: null
+  seed: 2026
+  epochs: 40
+  batch_size: 64
+  num_workers: 0
+  sampler: class_balanced
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 6
+  use_amp: true
+  metrics_prior_alpha: 0.0
+  device: auto
+augment:
+  preset: configs/augment/default.yaml
+  enabled: false
+inference:
+  num_classes: null  # 推理输出类别数；null 读取权重，填写整数时以此为准；新增未训练类别的概率为 0
+  progress: true
+  checkpoint: null
+  labels_file: null
+  save_dir: null
+  batch_size: 256
+loss:
+  objective: multigrain
+  ce:
+    weight: 1.0
+    class_weights: null
+    prior_alpha: 0.0
+  stream_infonce:
+    weight: 0.0
+    temperature: 0.2
+  pulse_infonce:
+    weight: 0.0
+    temperature: 0.2
+    pulses_per_sequence: 8
+  adversarial:
+    weight: 0.0

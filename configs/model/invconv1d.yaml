@@ -1,0 +1,8 @@
+name: invconv1d
+type: invconv1d
+in_channels: 3
+d_model: 64
+kernel_size: 51
+dropout: 0.2
+sequence_length: 256
+contrast_dim: 128

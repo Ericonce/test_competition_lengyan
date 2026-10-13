@@ -1,0 +1,23 @@
+name: pulse_hypothesis_cnn_fused
+type: pulse_conditioned_contrastive_cnn
+in_channels: 3
+hidden_channels:
+  - 64
+  - 128
+  - 256
+stream_embedding_dim: 256
+contrast_dim: 128
+dropout: 0.1
+
+raw_pulse_stem_dim: 32
+fuse_hypothesis_features: true
+classification_hypothesis_randomize: false
+contrast_hypothesis_randomize: false
+hypothesis_signal_length: 64
+hypothesis_pulses_per_sequence: 8
+hypothesis_num_modes: 6
+hypothesis_hidden_dim: 32
+hypothesis_frequency_jitter: 0.08
+hypothesis_width_jitter: 0.04
+hypothesis_phase_jitter: true
+adversarial_alignment: false

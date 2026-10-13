@@ -1,0 +1,7 @@
+# ResNet1D-18 + Softmax：用于 CF/PW/PRI 三通道序列的独立分类模型。
+name: resnet_softmax
+type: resnet_softmax
+in_channels: 3
+base_channels: 64  # 四个残差阶段的通道数为 64、128、256、512；可调基础宽度。
+dropout: 0.1  # 全局平均池化后、分类层前的 Dropout。
+# 分类层类别数由训练调用/pipeline/data.yaml 决定；推理 Softmax 由公共 predictor 计算。

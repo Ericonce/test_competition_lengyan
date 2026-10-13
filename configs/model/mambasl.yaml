@@ -1,0 +1,11 @@
+name: mambasl
+type: mambasl
+in_channels: 3
+d_model: 128
+d_state: 16
+d_conv: 4
+expand: 2
+stream_embedding_dim: 128
+contrast_dim: 128
+dropout: 0.1
+mamba_backend: auto

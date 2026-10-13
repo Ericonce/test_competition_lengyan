@@ -1,0 +1,20 @@
+name: mptsnet1d
+type: mptsnet1d
+in_channels: 3
+d_model: 64
+depth: 2
+kernel_sizes:
+  - 3
+  - 7
+  - 15
+  - 31
+periods:
+  - 2
+  - 4
+  - 8
+  - 16
+num_heads: 4
+token_count: 32
+dropout: 0.1
+norm: batch
+contrast_dim: 128

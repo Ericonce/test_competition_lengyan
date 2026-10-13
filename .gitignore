@@ -1,0 +1,25 @@
+# Datasets and generated data caches
+/datasets/
+.pulsecls_cache/
+
+# Model checkpoints and exported weights
+/weights/
+/checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.bin
+*.pt.tmp
+*.pth.tmp
+*.ckpt.tmp
+
+# Training, inference and visualization results
+/results/
+
+# Generated Python and test artifacts
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/

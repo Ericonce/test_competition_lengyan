@@ -1,0 +1,12 @@
+name: modern_tcn
+type: modern_tcn
+in_channels: 3
+d_model: 32
+depth: 2
+large_kernel: 31
+small_kernel: 5
+patch_size: 8
+patch_stride: 4
+ffn_ratio: 2
+dropout: 0.1
+contrast_dim: 128

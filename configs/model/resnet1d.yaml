@@ -1,0 +1,7 @@
+name: resnet1d
+type: resnet1d
+in_channels: 3
+base_channels: 64
+stream_embedding_dim: 256
+contrast_dim: 128
+dropout: 0.1

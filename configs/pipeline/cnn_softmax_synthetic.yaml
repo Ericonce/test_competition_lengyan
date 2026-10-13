@@ -1,0 +1,46 @@
+name: cnn_softmax_synthetic
+task: classify
+# 先运行 tools/generate_synthetic_radar.py，data.yaml 会自动记录实际类别数。
+data: datasets/synthetic_radar_overlap/data.yaml
+model: configs/model/cnn1d.yaml
+output_dir: results/cnn_softmax_synthetic_overlap
+# 先采样总数据，再划分；比例以 CSV 脉冲流条数为单位，不截取单条 CSV。
+dataset:
+  sample_ratio: 0.01  # 使用总数据的比例；0.5 表示先选取 50%
+  train_ratio: 0.8  # 采样后用于训练的比例
+  val_ratio: 0.2  # 采样后用于验证的比例；与 train_ratio 之和须为 1
+  seed: 2026  # 固定采样与划分，独立于模型训练种子
+  stratified: true  # 按类别分层，尽量保持每类占比
+# 调参结束后用全部数据：sample_ratio=1.0、train_ratio=1.0、val_ratio=0.0。
+# 训练和推理共用的固定输入长度与长度处理策略；原始 CSV 保持随机长度。
+sequence_length: 256
+length_policy:
+  short: zero  # zero=尾部补零；repeat=循环重复；error=短序列报错
+  long: head  # head=保留前段；center=中心裁剪；error=长序列报错
+train:
+  num_classes: null  # 训练类别数；null 读取训练 data.yaml，可填写 10、100 等正整数
+  device: auto
+  seed: 2026
+  epochs: 40
+  batch_size: 64
+  lr: 0.001
+  early_stopping_patience: 6
+  resume: false
+  resume_checkpoint: null
+augment:
+  preset: configs/augment/default.yaml
+  enabled: false  # 生成时已有噪声；按需开启训练增强
+inference:
+  num_classes: null  # 推理输出类别数；null 读取权重，填写整数时以此为准；新增未训练类别的概率为 0
+  progress: true  # 显示读取与推理进度、速度、已用时间和预计剩余时间
+  checkpoint: null  # null 自动选 best_model.pt；无验证训练则选 final_model.pt
+  labels_file: null  # 指定 datasets/synthetic_radar_test/labels.txt 后推理并评估
+  save_dir: null  # null 保存到 output_dir/infer_test，输出 predictions.csv
+  batch_size: 256  # 推理批大小；输入长度与补长策略仍使用上面的设置
+loss:
+  ce:
+    weight: 1.0
+  stream_infonce:
+    weight: 0.0
+  pulse_infonce:
+    weight: 0.0

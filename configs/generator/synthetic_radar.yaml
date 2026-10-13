@@ -1,0 +1,75 @@
+# 辐射源三通道合成引擎：每行一个脉冲，通道顺序为 CF/PW/PRI。
+# 本项目按脉冲序号模拟调制规律，不生成脉内波形或 IQ。
+output_dir: datasets/synthetic_radar_overlap
+# 同一路径再次生成会完整替换旧数据及缓存；新数据生成失败时保留旧目录。
+seed: 2026  # 相同配置和种子可以复现数据
+num_emitters: 100  # 辐射源类别数量，标签为 0 到 num_emitters-1
+sequences_per_emitter: 8000  # 每类序列数量；也可写成列表，如 [100, 80, 120]
+test_num_sequences: 10000  # 独立测试集总序列数，尽量均匀分配到各辐射源类别
+test_output_dir: datasets/synthetic_radar_test  # 平铺 CSV 和 labels.txt；目录不用中文
+num_transmitter_types: 6  # 从下面的 PRI × CF 组合中随机选取几种发射机模板
+
+# 类间重叠：同组辐射源共享接近的基础参数和相同模板，靠时序规律区分。
+overlap:
+  enabled: true
+  emitters_per_group: 5  # 每组辐射源数量；100 类形成 20 组
+  base_jitter_ratio: [0.1, 0.1, 0.1]  # 组内 CF/PW/PRI 中心相对共享中心的最大偏差
+  modulation_jitter_ratio: 0.05  # 组内调制幅度相对共享幅度的最大偏差
+
+# 接收观测扰动：整段偏差不会像独立逐点噪声一样被长序列平均掉。
+observation:
+  enabled: true
+  session_bias_std_ratio: [0.025, 0.04, 0.03]  # 每条序列 CF/PW/PRI 的持续测量偏差标准差
+  session_bias_max_ratio: 0.15  # 偏差最大绝对比例
+  missing_pulse_rate_range: [0.05, 0.20]  # 每条序列独立抽取漏脉冲率；PRI 按剩余脉冲重新计算
+ 
+sequence:
+  length: 256  # 关闭随机长度后，每条序列的脉冲数量
+  random_length: true
+  length_range: [128, 512]  # 随机长度上下限，包含两个端点
+  start_index_range: [0, 10000]  # 不同序列从调制规律的不同位置开始
+  parameter_drift_ratio: 0.005  # 每条序列基础参数的小幅漂移，最大约 ±0.5%
+
+transmitter:
+  # PRI：固定、参差、抖动、正弦、滑变
+  pri_modes: [fixed, staggered, jittered, sinusoidal, sliding]
+  # CF 按脉冲序号变化：线性扫频、非线性扫频、离散频率码、相位码驱动的频率代理
+  # phase_coded 将 BPSK 码映射成 CF 高低档；不表示恢复了真实脉内相位。
+  cf_modes: [linear_fm, nonlinear_fm, frequency_coded, phase_coded]
+  # PW：固定、离散多档、正弦变化；每个模板固定一种方式
+  pw_modes: [fixed, multilevel, sinusoidal]
+  # 手动模板可替代随机抽取；null 表示自动生成。
+  # templates:
+  #   - {pri_mode: staggered, cf_mode: linear_fm, pw_mode: fixed}
+  templates: null
+
+parameters:
+  cf_mhz: [1000.0, 12000.0]  # 各辐射源基础载频范围（MHz）
+  pw_us: [5.0, 50.0]  # 基础脉宽范围（微秒）
+  pri_us: [200.0, 1600.0]  # 基础脉冲重复周期范围（微秒）
+  pri_depth_ratio: [0.05, 0.25]  # PRI 调制幅度相对基础 PRI 的比例
+  cf_depth_ratio: [0.002, 0.02]  # CF 调制幅度相对基础 CF 的比例
+  pw_depth_ratio: [0.02, 0.15]  # 非固定 PW 的变化幅度比例
+  period_pulses: [12, 64]  # 周期调制的周期长度（脉冲数）
+  stagger_levels: [3, 6]  # 参差 PRI 档位数量
+  frequency_levels: [3, 8]  # 频率编码的频率档位数量
+  code_length: [7, 31]  # 频率码/相位码的码长
+  code_hold_pulses: [1, 4]  # 一个码元保持的脉冲数量
+  pw_levels: [2, 4]  # 多档 PW 的档位数量
+  max_duty_ratio: 0.5  # 每个脉冲要求 PW < PRI × 此比例
+
+noise:
+  enabled: true
+  snr_db_range: [10.0, 20.0]  # 每条序列独立抽取的三通道特征 SNR；可写 [35, 35]
+  # 先除以固定尺度、计算完整序列能量，再生成并缩放高斯噪声。
+  # 尺度顺序为 CF(MHz)、PW(us)、PRI(us)，统一量纲，不按单条序列重新拟合。
+  channel_scales: [10000.0, 50.0, 1000.0]
+  power_allocation: per_channel  # 按各通道自身能量分配噪声，避免小脉宽被淹没；equal 为旧方式
+  correlation_range: [0.4, 0.85]  # 高斯噪声的相邻脉冲相关系数；[0, 0] 为独立噪声
+  invalid_policy: clip  # clip=修正非物理值（支持低 SNR）；resample=严格重试；error=直接报错
+  min_value: 0.000001  # 非正值修正的正数下限，单位随通道
+  max_attempts: 256  # 仅 resample 模式使用，耗尽则报错
+  # 加噪前按目标 SNR 缩放；物理值修正后实际 SNR 可能不同，记录在 achieved_snr_db。
+
+save_clean: false  # 开启后额外保存 clean/<类别>/<编号>.npy，便于核对噪声
+# 生成器只保存总数据；采样比例和训练/验证比例统一在 pipeline 的 dataset 中设置。

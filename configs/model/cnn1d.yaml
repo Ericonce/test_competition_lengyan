@@ -1,0 +1,12 @@
+name: cnn1d
+type: multigrain_cnn
+in_channels: 3
+hidden_channels:
+  - 64
+  - 128
+  - 256
+stream_embedding_dim: 256
+pulse_embedding_dim: 256
+contrast_dim: 128
+dropout: 0.1
+

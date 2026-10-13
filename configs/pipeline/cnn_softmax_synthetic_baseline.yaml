@@ -1,0 +1,43 @@
+# CNN 对照配置，与其他方法使用相同合成总池；可独立调参。
+name: cnn_softmax_synthetic_baseline
+task: classify
+data: datasets/synthetic_radar_overlap/data.yaml
+model: configs/model/cnn1d.yaml
+output_dir: results/cnn_softmax_synthetic_baseline
+dataset:
+  sample_ratio: 1.0
+  train_ratio: 0.8
+  val_ratio: 0.2
+  seed: 2026
+  stratified: true
+sequence_length: 256
+length_policy:
+  short: zero
+  long: head
+train:
+  num_classes: null  # 训练类别数；null 读取训练 data.yaml，可填写 10、100 等正整数
+  device: auto
+  seed: 2026
+  epochs: 20
+  batch_size: 64
+  lr: 0.001
+  early_stopping_patience: 6
+  resume: false
+  resume_checkpoint: null
+augment:
+  preset: configs/augment/default.yaml
+  enabled: false
+loss:
+  ce:
+    weight: 1.0
+  stream_infonce:
+    weight: 0.0
+  pulse_infonce:
+    weight: 0.0
+inference:
+  num_classes: null  # 推理输出类别数；null 读取权重，填写整数时以此为准；新增未训练类别的概率为 0
+  progress: true
+  checkpoint: null
+  labels_file: null
+  save_dir: null
+  batch_size: 256

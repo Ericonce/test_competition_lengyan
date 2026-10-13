@@ -1,0 +1,307 @@
+# 三维 PDW 数据增强：CF=载频，PW=脉宽，PRI=脉冲重复周期。
+# 使用：开启所需方法的 enabled，调整其参数，再用 order 指定执行先后。
+# 多种方法串联：后一种方法处理前一种方法的增强结果；关闭的方法自动跳过。
+# methods 下的分类只用于阅读，真正执行顺序由 order 决定。
+# 默认开启 jittering、scaling、pulse_mask、feature_mask，其余方法默认关闭。
+# 数值扰动作用于训练标准化后的特征，std 不是 MHz/us 等物理单位。
+# 数值、频谱、遮蔽及序列变换都处理 CF/PW/PRI，PRI 不需要保持递增。
+# 频域中的“频率”指特征沿脉冲序列变化的频谱，不是直接修改雷达载频。
+# 同类融合只从当前训练 batch 选择同类别样本；该类别仅有一个样本时跳过。
+# DTW=动态时间规整（将两条序列中的相似位置对齐）；相关方法计算较慢。
+# MixUp 需排在所有已开启的同类融合方法之后；增强仅用于训练。
+
+enabled: true  # 增强总开关；false 关闭全部数据增强
+check_finite: true  # 检查增强后是否含 NaN/Inf，发现异常则报错
+
+# 执行顺序：可调整列表中的先后；每个已开启方法必须出现且不能重复。
+order:
+- jittering  # 抖动
+- scaling  # 幅值缩放
+- rotation  # 旋转
+- magnitude_warping  # 幅值扭曲
+- white_noise_windows  # 局部噪声
+- permutation  # 分段重排
+- slicing  # 随机切片
+- window_slicing  # 窗口切片
+- time_warping  # 时间扭曲
+- window_warping  # 局部时间伸缩
+- time_shift  # 循环平移
+- time_flip  # 时间翻转
+- frequency_warping  # 频谱扭曲
+- vtlp  # 分段频谱扭曲
+- frequency_slicing  # 频带切除
+- random_noise_boxes  # 时频噪声框
+- stft_mask  # 时频遮蔽
+- aaft  # AAFT 替代序列
+- iaaft  # IAAFT 替代序列
+- sfcc  # 同类频带融合
+- rim  # 缺失填补
+- interpolation  # 同类线性插值
+- spawner  # SPAWNER
+- random_guided_warp  # 随机引导扭曲
+- random_guided_warp_shape  # 形状引导扭曲
+- discriminative_guided_warp  # 判别引导扭曲
+- discriminative_guided_warp_shape  # 形状判别引导扭曲
+- dtw_mix  # DTW 融合
+- dba  # DTW 重心平均
+- emda  # EMDA 风格融合
+- statistical_style  # 统计风格融合
+- sample_combining  # 同类频带组合
+- pulse_mask  # 脉冲遮蔽
+- feature_mask  # 特征遮蔽
+- mixup  # MixUp
+
+methods:
+
+  # ===== 一、幅值与噪声变换：模拟 CF/PW/PRI 的数值扰动 =====
+  # 抖动：给 CF/PW/PRI 添加小幅高斯噪声，模拟测量误差。
+  jittering:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    std: 0.01  # 扰动标准差；越大变化越强
+
+  # 幅值缩放：随机乘一个接近 1 的系数，模拟特征幅度变化。
+  scaling:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    std: 0.02  # 缩放系数的标准差；系数围绕 1 波动
+
+  # 旋转：在标准化后的 CF/PW 平面混合前两个特征，PRI 保持不变。
+  rotation:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    max_angle_degrees: 5.0  # 最大旋转角度（度），随机取正负角度
+
+  # 幅值扭曲：用平滑变化的缩放曲线调整 CF/PW/PRI。
+  magnitude_warping:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    std: 0.05  # 扰动标准差；越大变化越强
+    knots: 4  # 内部控制点数量，越多曲线变化越细
+
+  # 局部噪声：仅在随机选中的一段脉冲中添加噪声。
+  white_noise_windows:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    std: 0.02  # 扰动标准差；越大变化越强
+    window_ratio: 0.2  # 局部窗口占序列长度的比例
+
+
+  # ===== 二、时间与序列变换：改变脉冲位置、局部长度或时间跨度 =====
+  # 分段重排：将 CF/PW/PRI 分成若干段后打乱，三个通道一起重排。
+  permutation:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    segments: 4  # 切分段数，随后随机打乱段顺序
+
+  # 随机切片：保留一段连续脉冲，再插值恢复原序列长度。
+  slicing:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    keep_ratio: 0.9  # 保留的连续序列比例；0.9 表示保留 90%
+
+  # 窗口切片：当前实现与 slicing 相同，保留局部窗口后恢复长度。
+  window_slicing:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    keep_ratio: 0.9  # 保留的连续序列比例；0.9 表示保留 90%
+
+  # 时间扭曲：非均匀拉伸/压缩序列，保持脉冲时间顺序。
+  time_warping:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    std: 0.1  # 时间步长对数扰动的标准差，控制时间扭曲强度
+    knots: 4  # 内部控制点数量，越多曲线变化越细
+
+  # 局部时间伸缩：拉伸或压缩一个窗口，再恢复原序列长度。
+  window_warping:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    window_ratio: 0.2  # 局部窗口占序列长度的比例
+    scales:  # 局部窗口长度缩放候选值；小于 1 压缩，大于 1 拉伸
+    - 0.8
+    - 1.2
+
+  # 循环平移：将 CF/PW/PRI 沿脉冲序列一起左右移动。
+  time_shift:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    ratio: 0.1  # 最大平移点数占序列长度的比例
+
+  # 时间翻转：将三个通道的脉冲顺序一起反转。
+  time_flip:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+
+
+  # ===== 三、频域与时频变换：改变序列频谱或局部时频区域 =====
+  # 频谱扭曲：伸缩 CF/PW/PRI 沿脉冲序列变化的频谱。
+  frequency_warping:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    max_ratio: 0.05  # 最大频谱伸缩偏差；0.05 表示约 ±5%
+
+  # 分段频谱扭曲：按频谱转折点分别变形，属于 VTLP 风格适配。
+  vtlp:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    max_ratio: 0.05  # 最大频谱伸缩偏差；0.05 表示约 ±5%
+    pivot_ratio: 0.8  # 频谱转折点的相对位置，范围 (0, 1]
+
+  # 频带切除：随机将一段频谱置零。
+  frequency_slicing:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    band_ratio: 0.1  # 被切除频带占频谱的比例
+
+  # 时频噪声框：在短时傅里叶变换的局部矩形区域添加噪声。
+  random_noise_boxes:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    std: 0.02  # 扰动标准差；越大变化越强
+    time_ratio: 0.2  # 矩形区域占时频图时间轴的比例
+    frequency_ratio: 0.1  # 矩形区域占时频图频率轴的比例
+    n_fft: 32  # 短时傅里叶变换窗口长度（采样点数）
+
+  # 时频遮蔽：将短时傅里叶变换的局部矩形区域置零。
+  stft_mask:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    time_ratio: 0.1  # 矩形区域占时频图时间轴的比例
+    frequency_ratio: 0.1  # 矩形区域占时频图频率轴的比例
+    n_fft: 32  # 短时傅里叶变换窗口长度（采样点数）
+
+
+  # ===== 四、傅里叶替代序列：根据原序列生成统计特性相近的变体 =====
+  # AAFT 替代序列：随机化傅里叶相位，再恢复原幅值分布。
+  aaft:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+
+  # IAAFT 替代序列：迭代调整频谱和幅值分布，使两者更接近原序列。
+  iaaft:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    iterations: 10  # 迭代次数；越大通常计算越慢
+
+
+  # ===== 五、遮蔽与缺失模拟：模拟脉冲值或特征通道缺失 =====
+  # 缺失填补：遮掉连续一段 CF/PW/PRI，再用两端值线性插值补齐。
+  rim:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    mask_ratio: 0.1  # 连续缺失区间占序列长度的比例
+
+  # 脉冲遮蔽：随机将部分脉冲的 CF/PW/PRI 同时置零。
+  pulse_mask:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    ratio: 0.01  # 每个脉冲被遮蔽的概率，0.01 表示约 1%
+
+  # 特征遮蔽：随机将整条 CF、PW 或 PRI 通道置零。
+  feature_mask:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    ratio: 0.01  # 每条 CF/PW/PRI 通道被整条遮蔽的概率
+
+
+  # ===== 六、同类样本融合与引导：使用当前 batch 的同类别样本 =====
+  # 同类频带融合：组合同类别样本的傅里叶频带，再与原样本混合。
+  sfcc:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    bands: 3  # 划分的频带数量
+    blend: 0.3  # 融合数据的占比，范围 0–1；原样本占 1-blend
+
+  # 同类线性插值：按固定比例混合两个同类别样本。
+  interpolation:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    blend: 0.3  # 融合数据的占比，范围 0–1；原样本占 1-blend
+
+  # SPAWNER：在随机锚点两侧分别对齐同类序列，融合后添加噪声。
+  spawner:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    std: 0.01  # 扰动标准差；越大变化越强
+    window_ratio: 0.1  # DTW 允许偏离对齐对角线的窗口比例
+    max_points: 64  # DTW 对齐最多使用的点数，越大越细但越慢
+
+  # 随机引导扭曲：随机选择同类样本，用 DTW 对齐引导变形。
+  random_guided_warp:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    window_ratio: 0.1  # DTW 允许偏离对齐对角线的窗口比例
+    max_points: 64  # DTW 对齐最多使用的点数，越大越细但越慢
+
+  # 形状引导扭曲：用局部形状描述进行同类 DTW 对齐。
+  random_guided_warp_shape:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    window_ratio: 0.1  # DTW 允许偏离对齐对角线的窗口比例
+    max_points: 64  # DTW 对齐最多使用的点数，越大越细但越慢
+    shape_radius: 2  # 局部形状描述的邻域半径（点数）
+
+  # 判别引导扭曲：参考同类和异类距离，选择同类引导样本。
+  discriminative_guided_warp:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    window_ratio: 0.1  # DTW 允许偏离对齐对角线的窗口比例
+    max_points: 64  # DTW 对齐最多使用的点数，越大越细但越慢
+    candidates: 3  # 判别选择时最多参考的同类/异类候选数量
+
+  # 形状判别引导扭曲：用局部形状距离选择同类引导样本。
+  discriminative_guided_warp_shape:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    window_ratio: 0.1  # DTW 允许偏离对齐对角线的窗口比例
+    max_points: 64  # DTW 对齐最多使用的点数，越大越细但越慢
+    candidates: 3  # 判别选择时最多参考的同类/异类候选数量
+    shape_radius: 2  # 局部形状描述的邻域半径（点数）
+
+  # DTW 融合：先对齐两个同类序列，再按比例混合。
+  dtw_mix:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    blend: 0.3  # 融合数据的占比，范围 0–1；原样本占 1-blend
+    window_ratio: 0.1  # DTW 允许偏离对齐对角线的窗口比例
+    max_points: 64  # DTW 对齐最多使用的点数，越大越细但越慢
+
+  # DTW 重心平均：对齐多个同类样本并迭代求平均序列。
+  dba:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    iterations: 2  # 迭代次数；越大通常计算越慢
+    neighbors: 3  # 参与重心平均的同类样本数量上限
+    window_ratio: 0.1  # DTW 允许偏离对齐对角线的窗口比例
+    max_points: 64  # DTW 对齐最多使用的点数，越大越细但越慢
+
+  # EMDA 风格融合：给同类样本施加延时和频谱增益后混合。
+  emda:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    blend: 0.3  # 融合数据的占比，范围 0–1；原样本占 1-blend
+    gain_std: 0.05  # 频谱对数增益的标准差，控制增益扰动强度
+    max_delay_ratio: 0.05  # 最大循环延时占序列长度的比例
+
+  # 统计风格融合：部分迁移同类样本 CF/PW/PRI 的均值与标准差。
+  statistical_style:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    blend: 0.2  # 融合数据的占比，范围 0–1；原样本占 1-blend
+
+  # 同类频带组合：替换部分离散余弦变换（DCT）频带后混合。
+  sample_combining:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    bands: 3  # 划分的频带数量
+    blend: 0.3  # 融合数据的占比，范围 0–1；原样本占 1-blend
+
+
+  # ===== 七、跨类样本融合：同时混合输入与分类损失 =====
+  # MixUp：混合样本及分类损失，可跨类别；对比学习分支会跳过。
+  mixup:
+    enabled: false  # 方法开关：true 开启，false 关闭
+    prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
+    alpha: 0.2  # Beta 分布参数，控制混合比例；越大越倾向接近各占一半
+

@@ -1,0 +1,39 @@
+# Global defaults for PulseCLS train / val / predict.
+# Experiment YAMLs under configs/pipeline override these.
+
+task: classify
+mode: train
+
+pipeline: configs/pipeline/cnn_softmax_synthetic.yaml
+model: configs/model/cnn1d.yaml
+data: datasets/synthetic_radar_overlap/data.yaml
+output_dir: results/cnn_softmax_synthetic_overlap
+
+# Train
+num_classes: null  # null reads data.yaml; explicit values set the training classifier size.
+device: auto  # Prefer NVIDIA CUDA, then Ascend NPU, then CPU.
+seed: 2026
+epochs: 20
+resume: false
+resume_checkpoint:
+batch_size: 256
+num_workers: 0
+sampler: random
+optimizer: adamw
+lr: 0.001
+weight_decay: 0.0001
+early_stopping_patience: 6
+use_amp: true
+two_views: true
+metrics_prior_alpha: 0.0
+
+# Sequence augment (Ultralytics image policies mapped onto PDW streams)
+time_shift_ratio: 0.0
+time_flip_prob: 0.0
+mixup_prob: 0.0
+mixup_alpha: 0.2
+
+# Predict
+split: val
+checkpoint:
+save_dir:

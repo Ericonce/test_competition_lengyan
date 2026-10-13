@@ -1,0 +1,28 @@
+# 各模型必须使用相同辐射源类别与标签编号训练；每个模型可独立设置 pipeline/权重。
+source: datasets/synthetic_radar_test  # 直接填测试文件夹，不使用 data.yaml 指定测试输入
+labels_file: null  # 指定 datasets/synthetic_radar_test/labels.txt 后才评估；null 只预测
+output_dir: results/infer_vote
+main_model: cnn_softmax  # 全部模型意见不同或最高票并列时，优先此模型
+num_classes: null  # null 读取各模型权重；填写整数时统一输出空间，新增未训练类别概率为 0
+progress: true  # 每个模型显示数据读取与预测进度
+device: auto  # 优先 CUDA，其次昇腾 NPU，最后 CPU
+sequence_length: 256
+length_policy: {short: zero, long: head}
+models:
+  - name: cnn_softmax
+    enabled: true
+    pipeline: configs/pipeline/cnn_softmax_synthetic.yaml
+    checkpoint: results/cnn_softmax_synthetic_overlap/best_model.pt
+  # 添加自己的已训练模型，并把 enabled 改为 true；权重必须是在同一套辐射源上训练的。
+  - name: modular_multigrain_iq
+    enabled: false
+    pipeline: configs/pipeline/modular_multigrain_iq_synthetic.yaml
+    checkpoint: results/modular_multigrain_iq_synthetic/best_model.pt
+  - name: pulse_hypothesis_fused
+    enabled: false
+    pipeline: configs/pipeline/pulse_hypothesis_fused_synthetic.yaml
+    checkpoint: results/pulse_hypothesis_fused_synthetic/best_model.pt
+  - name: resnet_softmax
+    enabled: false  # 训练该模型后可开启，类别编号须与其他成员一致。
+    pipeline: configs/pipeline/resnet_softmax_synthetic.yaml
+    checkpoint: results/resnet_softmax_synthetic/best_model.pt
