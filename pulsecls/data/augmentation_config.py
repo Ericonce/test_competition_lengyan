@@ -4,15 +4,16 @@ from pathlib import Path
 import math
 
 from pulsecls.cfg import load_yaml, deep_update
+from pulsecls.data.noise import validate_snr_db
 
 PRESET_PATH = Path(__file__).resolve().parents[2] / "configs/augment/default.yaml"
 
 # Parameters are defined explicitly to reject misspelled or meaningless thresholds.
 METHOD_DEFAULTS = {
-    "jittering": {"std": .01}, "scaling": {"std": .02},
+    "jittering": {"snr_db": 40.}, "scaling": {"std": .02},
     "rotation": {"max_angle_degrees": 5.},
     "magnitude_warping": {"std": .05, "knots": 4},
-    "white_noise_windows": {"std": .02, "window_ratio": .2},
+    "white_noise_windows": {"snr_db": 40., "window_ratio": .2},
     "permutation": {"segments": 4},
     "slicing": {"keep_ratio": .9}, "window_slicing": {"keep_ratio": .9},
     "time_warping": {"std": .1, "knots": 4},
@@ -21,12 +22,12 @@ METHOD_DEFAULTS = {
     "frequency_warping": {"max_ratio": .05},
     "vtlp": {"max_ratio": .05, "pivot_ratio": .8},
     "frequency_slicing": {"band_ratio": .1},
-    "random_noise_boxes": {"std": .02, "time_ratio": .2, "frequency_ratio": .1, "n_fft": 32},
+    "random_noise_boxes": {"snr_db": 40., "time_ratio": .2, "frequency_ratio": .1, "n_fft": 32},
     "stft_mask": {"time_ratio": .1, "frequency_ratio": .1, "n_fft": 32},
     "aaft": {}, "iaaft": {"iterations": 10},
     "sfcc": {"bands": 3, "blend": .3},
     "rim": {"mask_ratio": .1}, "interpolation": {"blend": .3},
-    "spawner": {"std": .01, "window_ratio": .1, "max_points": 64},
+    "spawner": {"snr_db": 40., "window_ratio": .1, "max_points": 64},
     "random_guided_warp": {"window_ratio": .1, "max_points": 64},
     "random_guided_warp_shape": {"window_ratio": .1, "max_points": 64, "shape_radius": 2},
     "discriminative_guided_warp": {"window_ratio": .1, "max_points": 64, "candidates": 3},
@@ -66,8 +67,12 @@ def resolve_methods(methods: dict, order: list[str] | None) -> tuple[dict, list]
             raise TypeError(f"{name} must have enabled/prob/parameter settings")
         allowed = set(parameters) | {"enabled", "prob"}
         if set(override) - allowed:
+            if "snr_db" in parameters and "std" in override:
+                raise ValueError(f"{name}.std has been removed; set {name}.snr_db in dB instead")
             raise ValueError(f"Unknown parameters for {name}: {sorted(set(override) - allowed)}")
         spec = deep_update({"enabled": False, "prob": 1., **parameters}, override)
+        if "snr_db" in spec:
+            spec["snr_db"] = validate_snr_db(spec["snr_db"])
         for key, value in spec.items():
             if isinstance(value, (int, float)) and not math.isfinite(value):
                 raise ValueError(f"{name}.{key} must be finite")

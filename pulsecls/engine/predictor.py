@@ -198,7 +198,8 @@ def save_prediction_outputs(target_dir, paths, predictions, confidence, labels, 
             save_classification_outputs(target_dir, labels, predictions, num_classes, prefix=prefix)
         print(f"Inference {prefix}: accuracy={metrics['accuracy']:.4f}, macro_f1={metrics['macro_f1']:.4f}")
     else:
-        for name in ("metrics.json", f"{prefix}_confusion_matrix.csv", f"{prefix}_classification_report.csv", f"{prefix}_classification_report.json"):
+        for name in ("metrics.json", f"{prefix}_confusion_matrix.csv", f"{prefix}_confusion_matrix_normalized.csv",
+                     f"{prefix}_classification_report.csv", f"{prefix}_classification_report.json"):
             (target_dir / name).unlink(missing_ok=True)
     (target_dir / "inference_summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     if labels is not None:

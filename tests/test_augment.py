@@ -16,7 +16,7 @@ def test_time_flip_reverses_selected_sequences() -> None:
     torch.manual_seed(0)
     augment = PulseAugment(
         enabled=True,
-        noise_std=0.0,
+        noise_snr_db=None,
         scale_std=0.0,
         pulse_mask_prob=0.0,
         feature_mask_prob=0.0,
@@ -31,7 +31,7 @@ def test_time_shift_keeps_shape() -> None:
     torch.manual_seed(1)
     augment = PulseAugment(
         enabled=True,
-        noise_std=0.0,
+        noise_snr_db=None,
         scale_std=0.0,
         pulse_mask_prob=0.0,
         feature_mask_prob=0.0,
@@ -46,7 +46,7 @@ def test_mixup_returns_partner_index() -> None:
     torch.manual_seed(2)
     augment = PulseAugment(
         enabled=True,
-        noise_std=0.0,
+        noise_snr_db=None,
         scale_std=0.0,
         pulse_mask_prob=0.0,
         feature_mask_prob=0.0,

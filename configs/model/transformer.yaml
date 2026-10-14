@@ -1,0 +1,8 @@
+name: transformer
+in_channels: 3
+type: transformer
+d_model: 128
+n_heads: 4
+num_layers: 3
+dim_feedforward: 512
+dropout: 0.1

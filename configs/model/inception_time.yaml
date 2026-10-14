@@ -1,0 +1,7 @@
+name: inception_time
+in_channels: 3
+type: inception_time
+depth: 6
+filters: 32
+bottleneck: 32
+dropout: 0.1

@@ -27,7 +27,7 @@ def test_all_sections_override_yaml_without_losing_defaults(alternative_data):
         "data": alternative_data,
         "epochs": 7, "train": {"epochs": 4, "optimizer_foreach": True},
         "model": {"dropout": .7}, "data_cfg": {"cache": False},
-        "augment": {"methods": {"jittering": {"std": .08}}},
+        "augment": {"methods": {"jittering": {"snr_db": 25}}},
         "loss": {"ce": {"class_weights": None}},
         "inference": {"split": "train"},
         "model.dropout": .8,
@@ -38,7 +38,7 @@ def test_all_sections_override_yaml_without_losing_defaults(alternative_data):
     assert cfg["model_cfg"]["depth"] == baseline["model_cfg"]["depth"]
     assert cfg["data_cfg"]["num_classes"] == 3
     assert cfg["data_cfg"]["cache"] is False
-    assert cfg["augment"]["methods"]["jittering"]["std"] == .08
+    assert cfg["augment"]["methods"]["jittering"]["snr_db"] == 25
     assert cfg["augment"]["methods"]["scaling"] == baseline["augment"]["methods"]["scaling"]
     assert cfg["loss"]["ce"]["class_weights"] is None
     assert cfg["inference"]["split"] == "train"
@@ -60,6 +60,20 @@ def test_trainer_accepts_paths_and_overrides():
 def test_reject_unknown_parameter():
     with pytest.raises(ValueError, match="epohcs"):
         get_cfg(PIPELINE, overrides={"epohcs": 3})
+
+
+def test_visualization_defaults_and_code_priority():
+    assert get_cfg(PIPELINE)["train"]["visualize"] is True
+    baseline = get_cfg(PIPELINE, {"train": {"visualize": False}})
+    assert get_cfg(baseline, {"visualize": None})["train"]["visualize"] is False
+    assert get_cfg(baseline, {"visualize": True})["train"]["visualize"] is True
+    assert get_cfg(PIPELINE, {"train.visualize": True, "visualize": False})["train"]["visualize"] is False
+
+
+@pytest.mark.parametrize("value", ["false", 0, 1])
+def test_visualization_requires_a_boolean(value):
+    with pytest.raises(TypeError, match="visualize"):
+        get_cfg(PIPELINE, {"visualize": value})
 
 
 def test_optional_none_retains_yaml_and_nested_none_clears():
@@ -129,16 +143,19 @@ def test_every_training_entry_exposes_common_parameters_with_code_priority(entry
     def capture(self, **kwargs):
         assert {"pipeline", "data", "output_dir", "num_classes", "epochs", "batch_size", "lr",
                 "device", "resume", "resume_checkpoint", "sequence_length", "length_policy",
-                "dataset", "augment"} <= set(kwargs)
+                "dataset", "augment", "labelsmooth", "visualize"} <= set(kwargs)
         cfg = self._resolve_pipeline(**kwargs)
         baseline = get_cfg(kwargs["pipeline"], overrides={"data": kwargs["data"]})
         assert cfg["train"]["num_classes"] == cfg["data_cfg"]["num_classes"] == kwargs["num_classes"]
         assert cfg["train"]["epochs"] == kwargs["epochs"]
+        assert cfg["train"]["visualize"] is kwargs["visualize"] is True
         assert cfg["train"]["early_stopping_patience"] == kwargs.get(
             "patience", kwargs.get("early_stopping_patience", baseline["train"]["early_stopping_patience"]))
         for key in ("sampler", "use_amp"):
             assert cfg["train"][key] == kwargs.get(key, kwargs.get("train", {}).get(key, baseline["train"][key]))
-        assert cfg["loss"] == deep_update(baseline["loss"], kwargs.get("loss", {}))
+        expected_loss = deep_update(baseline["loss"], kwargs.get("loss", {}))
+        expected_loss["ce"]["label_smoothing"] = kwargs["labelsmooth"]
+        assert cfg["loss"] == expected_loss
         assert cfg["data_cfg"]["selection"] == deep_update(baseline["data_cfg"]["selection"], kwargs.get("dataset", {}))
         augment = kwargs["augment"]
         preset = augment.get("preset")
@@ -172,7 +189,7 @@ def test_edit_yaml_is_effective_and_explicit_values_win(tmp_path):
 
 def test_augment_preset_replacement_with_local_threshold(tmp_path):
     preset = tmp_path / "augment.yaml"
-    preset.write_text("enabled: false\nmethods:\n  jittering:\n    enabled: true\n    std: 0.04\n", encoding="utf-8")
-    cfg = get_cfg(PIPELINE, overrides={"augment": {"preset": preset, "methods": {"jittering": {"std": .09}}}})
+    preset.write_text("enabled: false\nmethods:\n  jittering:\n    enabled: true\n    snr_db: 28\n", encoding="utf-8")
+    cfg = get_cfg(PIPELINE, overrides={"augment": {"preset": preset, "methods": {"jittering": {"snr_db": 20}}}})
     assert cfg["augment"]["enabled"] is False
-    assert cfg["augment"]["methods"]["jittering"]["std"] == .09
+    assert cfg["augment"]["methods"]["jittering"]["snr_db"] == 20

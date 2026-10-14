@@ -12,6 +12,16 @@ from pulsecls.nn.classifiers.modern_tcn import ModernTCNClassifier
 from pulsecls.nn.classifiers.mptsnet import MPTSNetClassifier
 from pulsecls.nn.classifiers.resnet1d_multigrain import ModularResNet1DClassifier
 from pulsecls.nn.classifiers.resnet_softmax import ResNetSoftmaxClassifier
+from pulsecls.nn.classifiers.resnet_deep import ResNet34Classifier, ResNet50Classifier
+from pulsecls.nn.classifiers.sequence_models import (
+    BiLSTMClassifier,
+    InformerClassifier,
+    InceptionTimeClassifier,
+    LSTMClassifier,
+    MLPClassifier,
+    TCNClassifier,
+    TransformerClassifier,
+)
 from pulsecls.nn.multigrain_cnn import MultiGrainCNN
 from pulsecls.nn.pulse_hypothesis_cnn import PulseConditionedContrastiveCNN
 from pulsecls.nn.resnet1d_hypothesis import ResNet1DHypothesisClassifier
@@ -27,6 +37,15 @@ MODEL_REGISTRY: dict[str, ModelFactory] = {
     "resnet1d": ResNet1DClassifier,
     "resnet_softmax": ResNetSoftmaxClassifier,
     "resnet1d_softmax": ResNetSoftmaxClassifier,
+    "resnet34": ResNet34Classifier,
+    "resnet50": ResNet50Classifier,
+    "tcn": TCNClassifier,
+    "inception_time": InceptionTimeClassifier,
+    "lstm": LSTMClassifier,
+    "bilstm": BiLSTMClassifier,
+    "transformer": TransformerClassifier,
+    "informer": InformerClassifier,
+    "mlp": MLPClassifier,
     "mambasl": MambaSLClassifier,
     "mamba_sl": MambaSLClassifier,
     "mamba": MambaSLClassifier,

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import warnings
 
 import torch
+from pulsecls.data.noise import gaussian_noise, validate_snr_db
 
 
 @dataclass
@@ -22,7 +23,7 @@ class LegacyPulseAugment:
     def __init__(
         self,
         enabled: bool = True,
-        noise_std: float = 0.02,
+        noise_snr_db: float | None = 40.0,
         scale_std: float = 0.03,
         pulse_mask_prob: float = 0.03,
         feature_mask_prob: float = 0.02,
@@ -32,7 +33,7 @@ class LegacyPulseAugment:
         mixup_alpha: float = 0.2,
     ) -> None:
         self.enabled = enabled
-        self.noise_std = float(noise_std)
+        self.noise_snr_db = None if noise_snr_db is None else validate_snr_db(noise_snr_db)
         self.scale_std = float(scale_std)
         self.pulse_mask_prob = float(pulse_mask_prob)
         self.feature_mask_prob = float(feature_mask_prob)
@@ -88,9 +89,10 @@ class LegacyPulseAugment:
         return inputs * scale
 
     def _noise(self, inputs: torch.Tensor) -> torch.Tensor:
-        if self.noise_std <= 0:
+        if self.noise_snr_db is None:
             return inputs
-        noise = torch.randn_like(inputs) * self.noise_std
+        valid = ~inputs.eq(0).all(dim=1, keepdim=True)
+        noise = gaussian_noise(inputs, self.noise_snr_db, mask=valid)
         return inputs + noise
 
     def _pulse_mask(self, inputs: torch.Tensor) -> torch.Tensor:
@@ -157,14 +159,77 @@ class PulseAugment(LegacyPulseAugment):
         return self._execute(inputs, labels, allow_mixup=False)[0]
 
     def apply(self, inputs: torch.Tensor, labels: torch.Tensor | None = None,
-              *, allow_mixup: bool = True) -> tuple[torch.Tensor, MixupState | None]:
+              *, allow_mixup: bool = True, valid_lengths: torch.Tensor | None = None) -> tuple[torch.Tensor, MixupState | None]:
+        if valid_lengths is not None:
+            if valid_lengths.shape != (inputs.size(0),) or bool(((valid_lengths < 0) | (valid_lengths > inputs.size(-1))).any()):
+                raise ValueError("One valid pulse length in [0, sequence_length] is required per sequence")
+            if bool((valid_lengths == inputs.size(-1)).all()):
+                valid_lengths = None
         if self.methods is None:
+            if valid_lengths is not None:
+                output = inputs.clone()
+                for length in valid_lengths.unique().cpu().tolist():
+                    if length == 0:
+                        continue
+                    rows = torch.nonzero(valid_lengths == length, as_tuple=False).flatten()
+                    output[rows, :, :length] = super().__call__(inputs[rows, :, :length])
+                if (allow_mixup and self.enabled and labels is not None and self.mixup_prob > 0
+                        and inputs.size(0) > 1 and float(torch.rand(())) < self.mixup_prob):
+                    partner = torch.randperm(output.size(0), device=output.device)
+                    lam = float(torch.distributions.Beta(self.mixup_alpha, self.mixup_alpha).sample())
+                    return self._mix_padded(output, partner, lam, valid_lengths), MixupState(lam, partner)
+                return output, None
             if allow_mixup:
                 return super().apply(inputs, labels)
             return super().__call__(inputs), None
-        return self._execute(inputs, labels, allow_mixup)
+        return self._execute(inputs, labels, allow_mixup, valid_lengths)
 
-    def _execute(self, inputs, labels, allow_mixup):
+    def _align_valid(self, inputs, lengths, target_length):
+        """Resample valid donor pulses, so fusion never mixes in padding as data."""
+        aligned = []
+        for row, length in enumerate(lengths.cpu().tolist()):
+            value = inputs[row:row + 1, :, :length]
+            aligned.append(self.runner.resize(value, target_length)[0] if length else inputs.new_zeros(inputs.size(1), target_length))
+        return torch.stack(aligned)
+
+    def _mix_padded(self, output, partner, lam, lengths):
+        mixed = output.clone()
+        for length in lengths.unique().cpu().tolist():
+            if not length:
+                continue
+            rows = torch.nonzero(lengths == length, as_tuple=False).flatten()
+            aligned = self._align_valid(output, lengths, length)
+            mixed[rows, :, :length] = lam * output[rows, :, :length] + (1 - lam) * aligned[partner[rows]]
+        return mixed
+
+    def _run_padded_method(self, name, output, parameters, labels, lengths):
+        if lengths is None:
+            return self.runner.run(name, output, parameters, labels)
+        # Pointwise transforms keep one vectorized pass and never modify the tail.
+        if name in {"jittering", "scaling", "rotation", "magnitude_warping", "pulse_mask", "feature_mask"}:
+            candidate = self.runner.run(name, output, parameters, labels)
+            valid = torch.arange(output.size(-1), device=output.device)[None, None] < lengths[:, None, None]
+            return candidate.masked_fill(~valid, 0)
+        candidate = output.clone()
+        for length in lengths.unique().cpu().tolist():
+            if not length:
+                continue
+            rows = torch.nonzero(lengths == length, as_tuple=False).flatten()
+            if length < 2 and name != "time_flip":
+                continue
+            if name == "spawner" and length < 3:
+                continue
+            if name in self.label_methods:
+                # All same-class donors remain eligible even if their lengths differ.
+                aligned = self._align_valid(output, lengths, length)
+                transformed = self.runner.run(name, aligned, parameters, labels)[rows]
+            else:
+                group_labels = labels[rows] if labels is not None else None
+                transformed = self.runner.run(name, output[rows, :, :length], parameters, group_labels)
+            candidate[rows, :, :length] = transformed
+        return candidate
+
+    def _execute(self, inputs, labels, allow_mixup, valid_lengths=None):
         if not self.enabled:
             return inputs, None
         if inputs.ndim != 3 or inputs.size(-1) < 2:
@@ -188,7 +253,8 @@ class PulseAugment(LegacyPulseAugment):
                     continue
                 partner = torch.randperm(output.size(0), device=output.device)
                 lam = float(torch.distributions.Beta(parameters["alpha"], parameters["alpha"]).sample())
-                output = lam * output + (1 - lam) * output[partner]
+                output = (lam * output + (1 - lam) * output[partner] if valid_lengths is None
+                          else self._mix_padded(output, partner, lam, valid_lengths))
                 mix = MixupState(lam=lam, partner_index=partner)
             else:
                 selected = torch.rand(output.size(0), device=output.device) < parameters["prob"]
@@ -201,7 +267,7 @@ class PulseAugment(LegacyPulseAugment):
                     selected = selected & eligible.to(selected.device)
                     if not bool(selected.any()):
                         continue
-                candidate = self.runner.run(name, output, parameters, labels)
+                candidate = self._run_padded_method(name, output, parameters, labels, valid_lengths)
                 if candidate.shape != output.shape:
                     raise RuntimeError(f"{name} changed input shape from {output.shape} to {candidate.shape}")
                 output = torch.where(selected[:, None, None], candidate, output)

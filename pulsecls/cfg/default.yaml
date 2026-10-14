@@ -26,6 +26,15 @@ early_stopping_patience: 6
 use_amp: true
 two_views: true
 metrics_prior_alpha: 0.0
+visualize: true  # Save training figures and validation t-SNE; false skips plotting.
+reporting:
+  dpi: 300
+  formats: [png, svg, pdf]
+  tsne:
+    max_samples: 3000  # 0 uses all validation sequences; otherwise sample by class.
+    seed: 2026
+    perplexity: 30.0
+    max_iter: 1000
 
 # Sequence augment (Ultralytics image policies mapped onto PDW streams)
 time_shift_ratio: 0.0

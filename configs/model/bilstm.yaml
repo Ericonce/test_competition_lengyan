@@ -1,0 +1,6 @@
+name: bilstm
+in_channels: 3
+type: bilstm
+hidden_size: 128
+num_layers: 2
+dropout: 0.1

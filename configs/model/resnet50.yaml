@@ -1,0 +1,5 @@
+name: resnet50
+in_channels: 3
+type: resnet50
+base_channels: 32
+dropout: 0.1

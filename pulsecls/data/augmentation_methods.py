@@ -9,6 +9,7 @@ import math
 import numpy as np
 import torch
 from torch.nn import functional as F
+from pulsecls.data.noise import gaussian_noise
 
 
 class MethodRunner:
@@ -133,8 +134,8 @@ class MethodRunner:
             if name == "stft_mask":
                 spec[:, f:f + fw, t:t + tw] = 0
             else:
-                noise = torch.complex(torch.randn_like(spec.real), torch.randn_like(spec.real)) * p["std"]
-                spec[:, f:f + fw, t:t + tw] += noise[:, f:f + fw, t:t + tw]
+                region = spec[:, f:f + fw, t:t + tw]
+                region += gaussian_noise(region, p["snr_db"], dimensions=(-2, -1))
         result = torch.istft(spec, n_fft=n_fft, hop_length=hop, window=window, length=shape[-1])
         return self.values(x, result.reshape(shape))
 
@@ -212,7 +213,8 @@ class MethodRunner:
             out[row] = restored
         result = self.resize(torch.from_numpy(out.transpose(0, 2, 1).copy()).to(x.device, x.dtype), x.size(-1))
         if name == "spawner":
-            result[:, channels] += torch.randn_like(result[:, channels]) * p["std"]
+            values = result[:, channels]
+            result[:, channels] = values + gaussian_noise(values, p["snr_db"])
         singleton = indices == torch.arange(x.size(0), device=x.device)
         result = torch.where(singleton[:, None, None], x, result)
         return result
@@ -222,7 +224,8 @@ class MethodRunner:
         v = x[:, channels]
         batch, _, length = x.shape
         if name == "jittering":
-            return self.values(x, v + torch.randn_like(v) * p["std"])
+            valid = ~x.eq(0).all(dim=1, keepdim=True)
+            return self.values(x, v + gaussian_noise(v, p["snr_db"], mask=valid))
         if name == "scaling":
             return self.values(x, v * (1 + torch.randn(batch, len(channels), 1, device=x.device, dtype=x.dtype) * p["std"]))
         if name == "rotation":
@@ -241,7 +244,9 @@ class MethodRunner:
             width = min(length, int(round(length * p["window_ratio"])))
             if width:
                 start = int(torch.randint(0, length - width + 1, ()).item())
-                result[..., start:start + width] += torch.randn_like(result[..., start:start + width]) * p["std"]
+                region = result[..., start:start + width]
+                valid = ~x[..., start:start + width].eq(0).all(dim=1, keepdim=True)
+                region += gaussian_noise(region, p["snr_db"], mask=valid)
             return self.values(x, result)
         if name == "permutation":
             result = v.clone()

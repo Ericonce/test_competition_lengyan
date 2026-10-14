@@ -1,0 +1,28 @@
+SSH_CONNECTED
+FILE /data/lym/resnet.py bytes 9088 matches_desktop True
+FILE /data/lym/cnn.py bytes 2229 matches_desktop True
+FILE /data/lym/efficientnet.py bytes 6373 matches_desktop True
+{"event": "environment", "python": "/data/lym/anaconda3/envs/radar/bin/python", "torch": "2.1.0", "device": "cpu", "cuda_available": false, "threads": 2}
+{"event": "model", "model": "ResNet18", "parameters": 3849675, "conv1d": 20, "conv2d": 0}
+{"event": "forward", "model": "ResNet18", "input": [2, 3, 128], "status": "PASS", "logits": [2, 11], "features": [2, 512], "seconds": 0.895}
+{"event": "forward", "model": "ResNet18", "input": [2, 3, 512], "status": "PASS", "logits": [2, 11], "features": [2, 512], "seconds": 0.886}
+{"event": "forward", "model": "ResNet18", "input": [2, 3, 3000], "status": "PASS", "logits": [2, 11], "features": [2, 512], "seconds": 0.876}
+{"event": "train_step", "model": "ResNet18", "input": [2, 3, 512], "status": "PASS", "loss": 2.849179, "finite_gradients": true, "first_parameter_updated": true}
+{"event": "model", "model": "ResNet50", "parameters": 30672171, "conv1d": 55, "conv2d": 0}
+{"event": "forward", "model": "ResNet50", "input": [2, 3, 128], "status": "PASS", "logits": [2, 11], "features": [2, 1024], "seconds": 2.427}
+{"event": "forward", "model": "ResNet50", "input": [2, 3, 512], "status": "FAIL", "error_type": "RuntimeError", "error": "The size of tensor a (17) must match the size of tensor b (5) at non-singleton dimension 0"}
+{"event": "train_step", "model": "ResNet50", "input": [2, 3, 128], "status": "PASS", "loss": 2.658185, "finite_gradients": true, "first_parameter_updated": true}
+{"event": "model", "model": "CNN", "parameters": 6406459, "conv1d": 10, "conv2d": 0}
+{"event": "forward", "model": "CNN", "input": [2, 3, 128], "status": "FAIL", "error_type": "RuntimeError", "error": "Calculated padded input size per channel: (7). Kernel size: (9). Kernel size can't be greater than actual input size"}
+{"event": "forward", "model": "CNN", "input": [2, 3, 512], "status": "FAIL", "error_type": "RuntimeError", "error": "Calculated padded input size per channel: (9). Kernel size: (11). Kernel size can't be greater than actual input size"}
+{"event": "forward", "model": "CNN", "input": [2, 3, 3000], "status": "PASS", "logits": [2, 11], "features": null, "seconds": 0.628}
+{"event": "train_step", "model": "CNN", "input": [2, 3, 3000], "status": "PASS", "loss": 2.678539, "finite_gradients": true, "first_parameter_updated": true}
+{"event": "model", "model": "EfficientNetB0", "parameters": 3456967, "conv1d": 81, "conv2d": 0}
+{"event": "forward", "model": "EfficientNetB0", "input": [2, 3, 128], "status": "PASS", "logits": [2, 11], "features": null, "seconds": 2.569}
+{"event": "forward", "model": "EfficientNetB0", "input": [2, 3, 512], "status": "PASS", "logits": [2, 11], "features": null, "seconds": 2.716}
+{"event": "forward", "model": "EfficientNetB0", "input": [2, 3, 3000], "status": "PASS", "logits": [2, 11], "features": null, "seconds": 2.289}
+{"event": "train_step", "model": "EfficientNetB0", "input": [2, 3, 512], "status": "PASS", "loss": 2.452796, "finite_gradients": true, "first_parameter_updated": true}
+{"event": "regularization", "model": "EfficientNetB0", "configured_drop_connect": 0.2, "actual_block_drop_rates": [0.0], "configured_dropout": 0.2}
+{"event": "cnn_length_constraint", "fc_inputs": 19712, "final_channels": 256, "compatible_length_min": 2980, "compatible_length_max": 3011}
+{"event": "done"}
+REMOTE_EXIT 0

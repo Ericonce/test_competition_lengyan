@@ -1,0 +1,64 @@
+# 单向 LSTM 序列分类；训练使用交叉熵。
+name: lstm_synthetic
+task: classify
+data: datasets/synthetic_radar_overlap/data.yaml
+model: configs/model/lstm.yaml
+output_dir: results/lstm_synthetic
+dataset:
+  sample_ratio: 0.01  # 先抽取总池的 1%，再划分训练/验证。
+  train_ratio: 0.8
+  val_ratio: 0.2
+  seed: 2026
+  stratified: true
+sequence_length: 256
+length_policy:
+  short: zero  # zero：末尾补零；repeat：循环重复。
+  long: head  # head：保留前段；center：中心裁剪。
+train:
+  visualize: true  # false 跳过结果绘图和 t-SNE；指标与权重仍保存。
+  reporting:
+    dpi: 300  # 训练结束后自动保存曲线；仅验证集生成分类分析图。
+    formats: [png, svg, pdf]
+    tsne:
+      max_samples: 3000  # 按类别采样；0 使用全部验证样本，指标和矩阵始终用全部样本。
+      seed: 2026
+      perplexity: 30.0  # 样本少时自动调低，保证小于样本数。
+      max_iter: 1000
+  num_classes: null  # null 读取 data.yaml；入口显式的类别数优先。
+  device: auto  # 优先 CUDA，其次昇腾 NPU，最后 CPU。
+  seed: 2026
+  epochs: 40
+  batch_size: 64
+  num_workers: 0
+  sampler: random
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 6
+  use_amp: true
+  two_views: false
+  metrics_prior_alpha: 0.0
+  resume: false
+  resume_checkpoint: null
+augment:
+  preset: configs/augment/default.yaml
+  enabled: false  # 按需开启训练增强；细节在增强 YAML 中修改。
+loss:
+  ce:
+    label_smoothing: 0.0  # 0 关闭标签平滑；可在 train.py 用 labelsmooth 覆盖。
+    weight: 1.0
+    class_weights: null
+    prior_alpha: 0.0
+  stream_infonce:
+    weight: 0.0
+  pulse_infonce:
+    weight: 0.0
+  adversarial:
+    weight: 0.0
+inference:
+  num_classes: null  # null 读取权重；手动填写时采用指定输出范围。
+  checkpoint: null
+  labels_file: null
+  save_dir: null
+  batch_size: 256
+  progress: true

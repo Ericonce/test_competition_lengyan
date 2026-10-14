@@ -40,16 +40,10 @@ from pulsecls.utils.device import (
 from pulsecls.utils.metrics import compute_metrics, save_classification_outputs
 from pulsecls.utils.seed import seed_everything
 from pulsecls.utils.progress import Progress
-
-
-def _json_safe(obj: Any) -> Any:
-    if isinstance(obj, Path):
-        return str(obj)
-    if isinstance(obj, dict):
-        return {key: _json_safe(value) for key, value in obj.items()}
-    if isinstance(obj, list):
-        return [_json_safe(value) for value in obj]
-    return obj
+from pulsecls.utils.training_outputs import (
+    clean_analysis_outputs, reporting_config, save_configuration, save_predictions,
+    save_training_figures, save_tsne, select_tsne_indices, training_log,
+)
 
 
 def _cpu_snapshot(value):
@@ -86,8 +80,9 @@ class BaseTrainer:
         self.loss_cfg = pipeline.get("loss", {})
         self.output_dir = Path(pipeline["output_dir"])
         self.num_classes = int(self.data_cfg["num_classes"])
-        print(f"Training classes: {self.num_classes}", flush=True)
         self.device = get_device(self.train_cfg.get("device"))
+        self.normalization_mean = torch.zeros(1, len(self.data_cfg.get("features", ["CF_MHz", "PW_us", "PRI_us"])), 1, device=self.device)
+        self.normalization_std = torch.ones_like(self.normalization_mean)
 
     def _build_loaders(self) -> tuple[DataLoader, DataLoader | None, np.ndarray, np.ndarray, np.ndarray, list[int]]:
         self.selection_info = None
@@ -98,15 +93,16 @@ class BaseTrainer:
             selection_kwargs["selection_plan"] = selection_plan
             info = self.selection_info
             print(f"Data selection: total={info['total_count']}, sampled={info['sampled_count']}, train={info['train_count']}, val={info['val_count']}")
-        train_data, train_labels, _ = load_split_arrays(self.data_cfg, "train", **selection_kwargs)
+        train_data, train_labels, self.train_paths = load_split_arrays(self.data_cfg, "train", **selection_kwargs)
         has_val = validation_enabled(self.data_cfg)
         if has_val:
-            val_data, val_labels, _ = load_split_arrays(self.data_cfg, "val", **selection_kwargs)
+            val_data, val_labels, self.val_paths = load_split_arrays(self.data_cfg, "val", **selection_kwargs)
             if not len(val_labels):
                 raise ValueError("Validation split is empty; set dataset.val_ratio=0 or increase sample_ratio")
         else:
             val_labels = np.empty(0, dtype=np.int64)
-        with Progress("Normalize train/val data", unit="steps", enabled=self.data_cfg.get("progress", True)):
+            self.val_paths = []
+        with Progress("Prepare raw train/val data and normalization statistics", unit="steps", enabled=self.data_cfg.get("progress", True)):
             zero_padding = zero_padding_enabled(self.data_cfg)
             mean, std = feature_stats(train_data, ignore_zero_padding=True) if zero_padding else feature_stats(train_data)
             resumed = getattr(self, "resume_checkpoint", None)
@@ -115,8 +111,10 @@ class BaseTrainer:
                 std = np.asarray(resumed["std"], dtype=np.float32)
                 if mean.shape != (train_data.shape[-1],) or std.shape != mean.shape or not np.isfinite(mean).all() or not np.isfinite(std).all() or (std <= 0).any():
                     raise ValueError("Resume checkpoint normalization does not match the data features")
-            train_dataset = PulseArrayDataset(train_data, train_labels, mean, std, zero_padding=zero_padding)
-            val_dataset = PulseArrayDataset(val_data, val_labels, mean, std, zero_padding=zero_padding) if has_val else None
+            self.normalization_mean = torch.as_tensor(mean, device=self.device).view(1, -1, 1)
+            self.normalization_std = torch.as_tensor(std, device=self.device).view(1, -1, 1)
+            train_dataset = PulseArrayDataset(train_data, train_labels, mean, std, zero_padding=zero_padding, normalize=False)
+            val_dataset = PulseArrayDataset(val_data, val_labels, mean, std, zero_padding=zero_padding, normalize=False) if has_val else None
 
         sampler = None
         shuffle = True
@@ -166,6 +164,21 @@ class BaseTrainer:
             self.device,
         )
 
+    def _normalize_features(self, features):
+        """Apply fixed training statistics only after the raw augmentation chain."""
+        normalized = (features.float() - self.normalization_mean) / self.normalization_std
+        if zero_padding_enabled(self.data_cfg):
+            normalized = normalized.masked_fill(features.eq(0).all(dim=1, keepdim=True), 0)
+        return normalized
+
+    def _augment_features(self, augment, features, labels, *, allow_mixup=True):
+        lengths = None
+        if zero_padding_enabled(self.data_cfg):
+            valid = ~features.eq(0).all(dim=1)
+            positions = torch.arange(1, features.size(-1) + 1, device=features.device)
+            lengths = (valid * positions).amax(dim=-1)
+        return augment.apply(features, labels, allow_mixup=allow_mixup, valid_lengths=lengths)
+
     def _loss_batch(
         self,
         model: nn.Module,
@@ -201,10 +214,10 @@ class BaseTrainer:
         )
 
         if use_two_views:
-            view_a, _ = augment.apply(features, labels, allow_mixup=False)
-            view_b, _ = augment.apply(features, labels, allow_mixup=False)
-            out_a = model(view_a)
-            out_b = model(view_b)
+            view_a, _ = self._augment_features(augment, features, labels, allow_mixup=False)
+            view_b, _ = self._augment_features(augment, features, labels, allow_mixup=False)
+            out_a = model(self._normalize_features(view_a))
+            out_b = model(self._normalize_features(view_b))
             breakdown = self.objective(out_a, out_b, labels)
             return (
                 breakdown.total,
@@ -220,10 +233,10 @@ class BaseTrainer:
         )
         if training:
             if use_contrast:
-                features, _ = augment.apply(features, labels, allow_mixup=False)
+                features, _ = self._augment_features(augment, features, labels, allow_mixup=False)
             else:
-                features, mix = augment.apply(features, labels)
-        outputs = model(features)
+                features, mix = self._augment_features(augment, features, labels)
+        outputs = model(self._normalize_features(features))
         if use_contrast:
             # A classwise stream objective needs only one forward pass. The
             # objective ignores out_b for this mode, while keeping one common
@@ -313,7 +326,48 @@ class BaseTrainer:
         averaged = {key: value / max(n_items, 1) for key, value in totals.items()}
         return averaged, np.concatenate(all_labels), np.concatenate(all_preds)
 
+    def _collect_predictions(self, model, loader, indices, log_priors, metric_prior_alpha):
+        """Sequential, unaugmented evaluation; retain features only for selected t-SNE samples."""
+        model.eval()
+        selected = set(indices.tolist())
+        embeddings, embedded_indices, labels_out, predictions, confidence = [], [], [], [], []
+        with Progress("Collect final evaluation predictions", len(loader.dataset),
+                      enabled=self.data_cfg.get("progress", True)) as progress, torch.no_grad():
+            for features, labels, sample_indices in loader:
+                with autocast_context(self.device, use_amp_for(self.device, self.train_cfg.get("use_amp", True))):
+                    outputs = model(self._normalize_features(features.to(self.device, non_blocking=True)))
+                logits = outputs["logits"].float()
+                if metric_prior_alpha != 0:
+                    logits = logits - metric_prior_alpha * log_priors.to(logits.device, dtype=logits.dtype)
+                score, prediction = logits.softmax(dim=1).max(dim=1)
+                labels_out.append(labels.numpy())
+                predictions.append(prediction.cpu().numpy())
+                confidence.append(score.cpu().numpy())
+                batch_indices = sample_indices.numpy()
+                keep = np.array([i in selected for i in batch_indices])
+                if keep.any():
+                    embedding = outputs["stream_embedding"]
+                    if embedding.ndim != 2:
+                        raise ValueError("t-SNE requires [batch, features] stream_embedding")
+                    positions = torch.as_tensor(np.flatnonzero(keep), device=embedding.device, dtype=torch.long)
+                    embeddings.append(embedding.index_select(0, positions).float().cpu().numpy())
+                    embedded_indices.extend(batch_indices[keep].tolist())
+                progress.update(len(labels))
+        if len(indices) and embedded_indices != indices.tolist():
+            raise ValueError("t-SNE samples are not aligned with evaluation records")
+        return (np.concatenate(labels_out), np.concatenate(predictions), np.concatenate(confidence),
+                np.concatenate(embeddings) if embeddings else None)
+
     def fit(self) -> dict[str, float]:
+        self.reporting = reporting_config(self.train_cfg.get("reporting"))
+        self.train_cfg["reporting"] = self.reporting
+        with training_log(self.output_dir, resume=bool(self.train_cfg.get("resume", False))):
+            print(f"Training classes: {self.num_classes}", flush=True)
+            save_configuration(self.output_dir, self.pipeline)
+            clean_analysis_outputs(self.output_dir)
+            return self._fit_impl()
+
+    def _fit_impl(self) -> dict[str, float]:
         additional_epochs = int(self.train_cfg.get("epochs", 20))
         if additional_epochs < 1:
             raise ValueError("epochs must be at least 1")
@@ -343,6 +397,8 @@ class BaseTrainer:
 
         train_loader, val_loader, train_labels, _val_labels, stats, active_labels = self._build_loaders()
         has_val = val_loader is not None
+        tsne_indices = (select_tsne_indices(_val_labels, self.reporting["tsne"]["max_samples"],
+                                           self.reporting["tsne"]["seed"]) if has_val and self.train_cfg["visualize"] else np.empty(0, dtype=np.int64))
         if not has_val:
             print("Validation disabled: train all requested epochs; save final_model.pt; no early stopping or validation LR scheduling.")
             for filename in ("best_model.pt", "val_classification_report.csv", "val_classification_report.json", "val_confusion_matrix.csv"):
@@ -386,8 +442,6 @@ class BaseTrainer:
         )
         augment = PulseAugment(**self.pipeline.get("augment", {}))
 
-        with (self.output_dir / "resolved_pipeline.json").open("w", encoding="utf-8") as file:
-            json.dump(_json_safe(self.pipeline), file, ensure_ascii=False, indent=2)
         np.savez(self.output_dir / "normalization.npz", mean=mean, std=std)
 
         history: list[dict[str, float | int]] = []
@@ -430,6 +484,15 @@ class BaseTrainer:
                 _save_checkpoint(best_checkpoint, self.output_dir / "best_model.pt")
             print(f"Resume from epoch {start_epoch}; train {additional_epochs} additional epoch(s).")
 
+        runtime = {"device": str(self.device), "accelerator": name, "validation_enabled": has_val,
+                   "use_amp": use_amp_for(self.device, self.train_cfg.get("use_amp", True)),
+                   "initial_epoch": start_epoch, "additional_epochs": additional_epochs,
+                   "optimizer": type(optimizer).__name__,
+                   "optimizer_initial_lr": [group["lr"] for group in optimizer.param_groups],
+                   "optimizer_weight_decay": [group["weight_decay"] for group in optimizer.param_groups]}
+        save_configuration(self.output_dir, self.pipeline, runtime=runtime, print_config=False)
+        print(f"Effective runtime settings: {runtime}", flush=True)
+
         for epoch in range(start_epoch + 1, start_epoch + additional_epochs + 1):
             started = time.perf_counter()
             train_losses, train_y, train_pred = self._run_epoch(
@@ -463,6 +526,8 @@ class BaseTrainer:
             record.update({f"val_{key}": value for key, value in val_losses.items()})
             record.update({f"train_{key}": value for key, value in train_metrics.items()})
             record.update({f"val_{key}": value for key, value in val_metrics.items()})
+            record.setdefault("val_accuracy", float("nan"))
+            record.setdefault("val_macro_f1", float("nan"))
             history.append(record)
             pd.DataFrame(history).to_csv(
                 self.output_dir / "training_history.csv",
@@ -513,19 +578,16 @@ class BaseTrainer:
             weights_only=False,
         )
         model.load_state_dict(checkpoint["model_state_dict"])
-        _losses, final_y, final_pred = self._run_epoch(
-            model,
-            val_loader if has_val else train_loader,
-            criterion,
-            None,
-            scaler,
-            augment,
-            log_priors=log_priors,
-            metric_prior_alpha=metric_prior_alpha,
-        )
+        evaluation_loader = val_loader if has_val else DataLoader(
+            train_loader.dataset, batch_size=int(self.train_cfg.get("batch_size", 256)),
+            shuffle=False, num_workers=int(self.train_cfg.get("num_workers", 0)), pin_memory=pin_memory_for(self.device))
+        final_y, final_pred, confidence, embeddings = self._collect_predictions(
+            model, evaluation_loader, tsne_indices, log_priors, metric_prior_alpha)
         final_metrics = compute_metrics(final_y, final_pred, self.num_classes, active_labels)
         evaluation_split = "val" if has_val else "train"
         save_classification_outputs(self.output_dir, final_y, final_pred, self.num_classes, prefix=evaluation_split)
+        paths = self.val_paths if has_val else self.train_paths
+        save_predictions(self.output_dir, evaluation_split, final_y, final_pred, confidence, paths)
         metadata = {"best_epoch": int(checkpoint["epoch"])} if has_val else {"epoch": int(checkpoint["epoch"])}
         metadata.update(validation_enabled=has_val, evaluation_split=evaluation_split)
         with (self.output_dir / "final_metrics.json").open("w", encoding="utf-8") as file:
@@ -537,6 +599,15 @@ class BaseTrainer:
             )
         print(f"{'Best' if has_val else 'Final'} epoch: {checkpoint['epoch']}")
         print(f"{evaluation_split} macro-F1: {final_metrics['macro_f1']:.6f}")
+        if self.train_cfg["visualize"]:
+            save_training_figures(self.output_dir, history, self.reporting, has_val=has_val,
+                                  show_progress=self.data_cfg.get("progress", True))
+            if has_val:
+                save_tsne(self.output_dir, embeddings, tsne_indices, final_y, final_pred, paths, self.reporting,
+                          show_progress=self.data_cfg.get("progress", True))
+        else:
+            print("Visualization disabled: saved metrics and checkpoints; skipped figures and t-SNE.")
+        print(f"Saved training outputs to: {self.output_dir}", flush=True)
         return {**metadata, **final_metrics}
 
 

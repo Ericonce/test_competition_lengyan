@@ -253,12 +253,13 @@ class PulseArrayDataset(Dataset[tuple[torch.Tensor, torch.Tensor, int]]):
         mean: np.ndarray,
         std: np.ndarray,
         zero_padding: bool = False,
+        normalize: bool = True,
     ) -> None:
         channels = data.shape[-1]
         if mean.size != channels or std.size != channels:
             raise ValueError(f"Normalization has {mean.size} channels; data has {channels}")
-        normalized = (data - mean.reshape(1, 1, channels)) / std.reshape(1, 1, channels)
-        if zero_padding:
+        normalized = (data - mean.reshape(1, 1, channels)) / std.reshape(1, 1, channels) if normalize else data
+        if zero_padding and normalize:
             normalized[np.all(data == 0, axis=-1)] = 0
         self.features = torch.from_numpy(normalized.transpose(0, 2, 1).astype(np.float32, copy=True))
         self.labels = torch.from_numpy(labels.astype(np.int64, copy=False))

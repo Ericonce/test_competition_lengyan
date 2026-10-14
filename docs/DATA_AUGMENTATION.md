@@ -13,7 +13,11 @@
 - `order`：明确指定顺序。关闭的方法跳过，开启但未列入 order 的方法会报错，避免静默遗漏。
 
 各方法是否开启以所选 YAML 的 methods.<名称>.enabled 为准；训练调用中的 augment.enabled 为 False 时，总开关优先关闭全部增强。要使用增强，先将调用总开关改为 True，再开启 YAML 中需要的方法。
-默认参数是工程起点，不表示已在当前数据上找到最优强度。幅值参数作用在训练标准化后的数据上，不是 MHz/us 的物理阈值。
+默认参数是工程起点，不表示已在当前数据上找到最优强度。所有方法先作用于原始 CSV 的 CF（MHz）、PW（μs）、PRI（μs），增强串联完成后再使用训练集均值/标准差标准化；验证集和推理只标准化、不随机增强。
+
+加性高斯噪声使用 `snr_db`（dB）控制：对每条序列、每个通道分别测量信号能量 `E_s`，抽取高斯噪声后缩放至 `E_n = E_s / 10^(snr_db/10)`。SNR 越低，加入的噪声越强；零能量通道不加噪。`white_noise_windows` 只在所选时间窗口计算能量；`random_noise_boxes` 只在所选 STFT 时频框计算能量；`spawner` 针对融合后的序列加噪。
+
+CF、PW、PRI 分别计算 SNR，避免把 MHz 和 μs 直接相加计算能量。各物理通道的噪声幅度会不同，但目标 SNR 相同。其它表示变换强度的参数（例如 `scaling.std`、`time_warping.std`）仍表示乘法系数或时间步幅变化，不是加性噪声。
 
 也可以在 `train.py` 的 `model.train(...)` 中追加 `augment`，局部设置优先于共享 YAML。
 例如在默认配置基础上关闭其他默认增强，先抖动，再时间扭曲：
@@ -26,7 +30,7 @@ return model.train(
     augment={
         "enabled": True,
         "methods": {
-            "jittering": {"enabled": True, "prob": 1.0, "std": 0.02},
+            "jittering": {"enabled": True, "prob": 1.0, "snr_db": 30.0},
             "time_warping": {"enabled": True, "prob": 1.0, "std": 0.1, "knots": 4},
             "scaling": {"enabled": False},
             "pulse_mask": {"enabled": False},
@@ -48,11 +52,11 @@ return model.train(
 
 | 名称 | 含义 | 示例强度/阈值 |
 | --- | --- | --- |
-| `jittering` | 抖动/高斯噪声 | `std=0.01` |
+| `jittering` | 逐序列、逐通道匹配特征 SNR 的高斯噪声 | `snr_db=40` dB |
 | `scaling` | 幅值缩放 | `std=0.02` |
 | `rotation` | CF/PW 平面小角度旋转 | `max_angle_degrees=5.0` |
 | `magnitude_warping` | 幅值曲线扭曲 | `std=0.05, knots=4` |
-| `white_noise_windows` | 局部白噪声窗口 | `std=0.02, window_ratio=0.2` |
+| `white_noise_windows` | 按窗口能量匹配 SNR 的局部白噪声 | `snr_db=40, window_ratio=0.2` |
 | `permutation` | CF/PW/PRI 分段重排 | `segments=4` |
 | `slicing` | 随机切片并恢复长度 | `keep_ratio=0.9` |
 | `window_slicing` | 窗口切片 | `keep_ratio=0.9` |
@@ -63,14 +67,14 @@ return model.train(
 | `frequency_warping` | 脉冲序列频谱扭曲 | `max_ratio=0.05` |
 | `vtlp` | VTLP 风格分段频谱映射 | `max_ratio=0.05, pivot_ratio=0.8` |
 | `frequency_slicing` | 频谱带切除 | `band_ratio=0.1` |
-| `random_noise_boxes` | STFT 局部噪声框 | `std=0.02, time_ratio=0.2, frequency_ratio=0.1, n_fft=32` |
+| `random_noise_boxes` | 按时频框能量匹配 SNR 的 STFT 局部噪声 | `snr_db=40, time_ratio=0.2, frequency_ratio=0.1, n_fft=32` |
 | `stft_mask` | STFT 时频掩蔽 | `time_ratio=0.1, frequency_ratio=0.1, n_fft=32` |
 | `aaft` | AAFT 幅值调整傅里叶替代数据 | `无额外强度参数` |
 | `iaaft` | IAAFT 迭代替代数据 | `iterations=10` |
 | `sfcc` | SFCC 风格同类频带组合 | `bands=3, blend=0.3` |
 | `rim` | 遮挡并线性填补（RIM 风格） | `mask_ratio=0.1` |
 | `interpolation` | 同类样本线性插值 | `blend=0.3` |
-| `spawner` | 带随机锚点的同类 DTW 融合 | `std=0.01, window_ratio=0.1, max_points=64` |
+| `spawner` | 带随机锚点的同类 DTW 融合 | `snr_db=40, window_ratio=0.1, max_points=64` |
 | `random_guided_warp` | RGW 同类随机引导扭曲 | `window_ratio=0.1, max_points=64` |
 | `random_guided_warp_shape` | RGWs 局部形状描述引导 | `window_ratio=0.1, max_points=64, shape_radius=2` |
 | `discriminative_guided_warp` | DGW 判别引导扭曲 | `window_ratio=0.1, max_points=64, candidates=3` |
@@ -92,7 +96,7 @@ return model.train(
 
 MixUp 会混合类别损失，只用于普通监督分类；对比学习分支会明确提示并跳过 MixUp，其他同类融合照常执行。MixUp 必须位于所有已开启的同类融合之后；其后可以继续使用不依赖配对标签的变换。
 
-所有增强仅在训练阶段使用，验证与推理不执行随机增强。旧 flat 参数接口仍兼容历史代码。
+所有增强仅在训练阶段使用，验证与推理不执行随机增强。补零尾部保持为零，不参与噪声 SNR 估计。启用同类融合时，不同有效长度的序列会按有效脉冲插值到目标长度供配对，填充位置不作为信号参与融合。
 
 ## 原文与项目实现的边界
 

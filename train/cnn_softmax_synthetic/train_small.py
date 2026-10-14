@@ -22,6 +22,8 @@ def main():
         epochs=50,  # resume=True 时表示本次额外训练轮数。
         batch_size=64,
         lr=0.001,
+        labelsmooth=0.0,  # 0 关闭标签平滑；例如 0.1 开启。
+        visualize=True,  # True 保存结果图和 t-SNE；False 关闭可视化。
         optimizer='adamw',
         weight_decay=0.0001,
         early_stopping_patience=6,

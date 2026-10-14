@@ -1,0 +1,5 @@
+name: mlp
+in_channels: 3
+type: mlp
+hidden_dims: [512, 256]
+dropout: 0.2

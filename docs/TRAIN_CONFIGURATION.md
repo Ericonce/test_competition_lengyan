@@ -19,6 +19,8 @@ return model.train(
     epochs=50,
     batch_size=64,
     lr=0.001,
+    labelsmooth=0.0,  # 0 关闭标签平滑；例如 0.1 开启。
+    visualize=True,  # 默认绘图；False 跳过所有训练结果图和 t-SNE。
     device="auto",
     resume=False,
     resume_checkpoint=PROJECT_ROOT / "results/cnn_softmax_synthetic_overlap_small/last_model.pt",
@@ -30,6 +32,8 @@ return model.train(
 ```
 
 完整入口还列出优化器、权重衰减、早停、AMP、工作进程数、种子、缓存和数据加载进度。续训时设置 resume=True，填写断点路径；epochs 是本次额外训练轮数。全部数据训练可设置 sample_ratio=1.0、train_ratio=1.0、val_ratio=0.0。
+
+所有训练入口都提供 `labelsmooth=0.0`，用于分类交叉熵的标签平滑：`0` 关闭，`0.1` 表示平滑强度为 0.1，有效范围为 `[0, 1]`。也可修改 pipeline 的 `loss.ce.label_smoothing`；显式 `labelsmooth` 优先于 YAML 和 `loss` 字典或点分路径。删除该参数或设为 `None` 时继承配置。此参数适用于所有模型的分类损失，不改变对比损失或评估标签。命令行训练也支持 `--labelsmooth 0.1`。
 
 早停支持 `patience=10` 简写，与 `early_stopping_patience=10` 等价：连续 10 轮验证 Macro-F1 未改善时停止。也支持 `train={"patience": 10}`、`**{"train.patience": 10}` 和 YAML 的 `train.patience`。建议只写其中一种；同一配置层两种名称都填写时，非 None 的 patience 优先。跨层仍遵循代码优先于 YAML、直接训练参数优先于 train 字典的规则。patience=None 不覆盖已有设置；无验证集时不启用基于验证的早停。
 
@@ -57,12 +61,16 @@ infer/infer_vote.py 同样直接填写各模型的 pipeline、checkpoint 与 ena
 
 ## 修改详细配置
 
+所有方法训练结束自动输出曲线、分类报告和验证集 t-SNE，见 [训练结果输出](TRAINING_OUTPUTS.md)。绘图参数位于 pipeline 的 train.reporting，也可使用 model.train(reporting={...}) 覆盖。
+
+所有训练入口都提供 `visualize=True`。设为 `False` 时跳过训练曲线、验证集每类指标图、混淆矩阵图以及 t-SNE 的特征采集、计算和导出；指标 CSV/JSON、混淆矩阵数值、预测 CSV、配置、日志和权重仍保存。也可设置 pipeline 的 `train.visualize`；直接参数优先，删除参数或设为 `None` 时继承 YAML。可视化是保存图片到结果目录，不弹出桌面窗口，适用于服务器训练。
+
 - configs/pipeline/*.yaml：未在调用中覆盖的训练、损失、数据采样和推理设置。
 - configs/model/*.yaml：网络结构参数。
 - 数据集内 data.yaml：文件根目录、辐射源类别数、CF/PW/PRI 特征等数据描述。
 - configs/augment/default.yaml：各增强方法开关、触发概率、阈值和执行顺序。训练入口将 augment.enabled 改为 True 后启用。
 
-所有配置字段仍可通过 train、model（或 model_cfg）、data_cfg、augment、loss、inference 字典覆盖；字典递归合并。model/data 接受替换 YAML 路径，augment.preset 接受增强 YAML 路径。也支持点分路径，例如 **{"augment.methods.jittering.std": 0.02, "model.dropout": 0.2}。
+所有配置字段仍可通过 train、model（或 model_cfg）、data_cfg、augment、loss、inference 字典覆盖；字典递归合并。model/data 接受替换 YAML 路径，augment.preset 接受增强 YAML 路径。也支持点分路径，例如 **{"augment.methods.jittering.snr_db": 30.0, "model.dropout": 0.2}。
 
 同一字段重复指定时，点分路径优先于字典，直接传入的 epochs/lr 等优先于 train 字典。直接参数的 None 忽略；字典或点分路径中的 None 可清空字段。未知参数会报错，避免拼写错误被忽略。
 

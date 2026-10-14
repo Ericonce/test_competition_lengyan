@@ -17,6 +17,15 @@ length_policy:
   short: zero
   long: head
 train:
+  visualize: true  # false 跳过结果绘图和 t-SNE；指标与权重仍保存。
+  reporting:
+    dpi: 300  # 训练结束后自动保存曲线；仅验证集生成分类分析图。
+    formats: [png, svg, pdf]
+    tsne:
+      max_samples: 3000  # 按类别采样；0 使用全部验证样本，指标和矩阵始终用全部样本。
+      seed: 2026
+      perplexity: 30.0  # 样本少时自动调低，保证小于样本数。
+      max_iter: 1000
   num_classes: null  # 训练类别数；null 读取训练 data.yaml，可填写 10、100 等正整数
   resume: false
   resume_checkpoint: null
@@ -46,6 +55,7 @@ inference:
 loss:
   objective: multigrain
   ce:
+    label_smoothing: 0.0  # 0 关闭标签平滑；可在 train.py 用 labelsmooth 覆盖。
     weight: 1.0
     class_weights: null
     prior_alpha: 0.0

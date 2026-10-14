@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from pulsecls.cfg import validate_label_smoothing
 from pulsecls.data.dataset import class_weights
 
 
@@ -26,7 +27,7 @@ class PriorAdjustedCrossEntropyLoss(nn.Module):
         )
         self.alpha = float(alpha)
         self.weight = weight
-        self.label_smoothing = float(label_smoothing)
+        self.label_smoothing = validate_label_smoothing(label_smoothing)
 
     def forward(
         self,
@@ -65,7 +66,7 @@ def build_classification_loss(
             mode=class_weight_mode,
         ).to(device)
 
-    label_smoothing = float(loss_cfg.get("label_smoothing", 0.0))
+    label_smoothing = validate_label_smoothing(loss_cfg.get("label_smoothing", 0.0))
     alpha = float(loss_cfg.get("prior_alpha", 0.0))
     if alpha == 0.0:
         return nn.CrossEntropyLoss(

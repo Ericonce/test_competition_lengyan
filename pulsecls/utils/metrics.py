@@ -95,6 +95,11 @@ def save_classification_outputs(
         output_dir / f"{prefix}_confusion_matrix.csv",
         encoding="utf-8-sig",
     )
+    support = matrix.sum(axis=1)
+    normalized = np.divide(matrix, support[:, None],
+                           out=np.zeros_like(matrix, dtype=np.float64), where=support[:, None] > 0)
+    pd.DataFrame(normalized, index=label_names, columns=label_names).to_csv(
+        output_dir / f"{prefix}_confusion_matrix_normalized.csv", encoding="utf-8-sig")
 
     report = classification_report(
         labels,
@@ -104,6 +109,10 @@ def save_classification_outputs(
         output_dict=True,
         zero_division=0,
     )
+    for index, name in enumerate(label_names):
+        # Per-class accuracy is correct / true samples, i.e. class recall.
+        report[name]["class_accuracy"] = float(normalized[index, index]) if support[index] else None
+        report[name]["correct_count"] = int(matrix[index, index])
     with (output_dir / f"{prefix}_classification_report.json").open(
         "w",
         encoding="utf-8",

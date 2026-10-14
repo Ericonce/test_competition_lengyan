@@ -136,6 +136,7 @@ def test_folder_inference_csv_optional_evaluation_and_no_training_selection(gene
     assert not unlabeled["evaluated"] and "macro_f1" not in unlabeled
     assert "label" not in pd.read_csv(output / "predictions.csv")
     assert not (output / "metrics.json").exists()
+    assert not (output / "test_confusion_matrix_normalized.csv").exists()
     assert not (output / "test_confusion_matrix.csv").exists()
 
 
@@ -182,14 +183,14 @@ def test_two_different_model_architectures_vote_and_evaluate(generated, tmp_path
         path.write_text(yaml.safe_dump(source), encoding="utf-8")
         models.append({"name": kind, "pipeline": str(path), "checkpoint": str(weights)})
     preset = tmp_path / "augment.yaml"
-    preset.write_text("enabled: true\nmethods:\n  jittering:\n    enabled: true\n    std: 0.08\n", encoding="utf-8")
+    preset.write_text("enabled: true\nmethods:\n  jittering:\n    enabled: true\n    snr_db: 25\n", encoding="utf-8")
     from pulsecls.engine.predictor import BasePredictor
     predict_paths = BasePredictor.predict_paths
     seen = []
     def checked_prediction(self, paths):
         assert self.pipeline["inference"]["batch_size"] == 2
         assert self.pipeline["train"]["batch_size"] != 2
-        assert self.pipeline["augment"]["methods"]["jittering"]["std"] == .08
+        assert self.pipeline["augment"]["methods"]["jittering"]["snr_db"] == 25
         seen.append(self.pipeline)
         return predict_paths(self, paths)
     monkeypatch.setattr(BasePredictor, "predict_paths", checked_prediction)

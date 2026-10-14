@@ -30,16 +30,16 @@ def test_each_method_shape_finite_no_mutation_for_pri(name):
 
 def test_composition_is_sequential_and_order_is_effective():
     x, _ = inputs()
-    first = PulseAugment(methods={"jittering": {"enabled": True, "std": .1}}, order=["jittering"])
+    first = PulseAugment(methods={"jittering": {"enabled": True, "snr_db": 20}}, order=["jittering"])
     second = PulseAugment(methods={"scaling": {"enabled": True, "std": .5}}, order=["scaling"])
-    combined = PulseAugment(methods={"jittering": {"enabled": True, "std": .1},
+    combined = PulseAugment(methods={"jittering": {"enabled": True, "snr_db": 20},
                                     "scaling": {"enabled": True, "std": .5}}, order=["jittering", "scaling"])
     torch.manual_seed(77)
     expected = second(first(x))
     torch.manual_seed(77)
     actual = combined(x)
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    reversed_order = PulseAugment(methods={"jittering": {"enabled": True, "std": .1},
+    reversed_order = PulseAugment(methods={"jittering": {"enabled": True, "snr_db": 20},
                                          "scaling": {"enabled": True, "std": .5}}, order=["scaling", "jittering"])
     torch.manual_seed(77)
     assert not torch.allclose(reversed_order(x), actual)
@@ -92,7 +92,7 @@ def test_label_methods_require_labels():
 
 @pytest.mark.parametrize("kwargs", [
     {"methods": {"typo": {"enabled": True}}},
-    {"methods": {"jittering": {"enabled": True, "std": -1}}},
+    {"methods": {"jittering": {"enabled": True, "snr_db": float("nan")}}},
     {"methods": {"jittering": {"enabled": True, "prob": 2}}},
     {"methods": {"jittering": {"enabled": True}}, "order": []},
     {"methods": {}, "order": ["scaling", "scaling"]},

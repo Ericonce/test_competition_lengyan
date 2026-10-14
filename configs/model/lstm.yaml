@@ -1,0 +1,6 @@
+name: lstm
+in_channels: 3
+type: lstm
+hidden_size: 128
+num_layers: 2
+dropout: 0.1

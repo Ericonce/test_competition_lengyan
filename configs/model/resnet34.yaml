@@ -1,0 +1,5 @@
+name: resnet34
+in_channels: 3
+type: resnet34
+base_channels: 32
+dropout: 0.1

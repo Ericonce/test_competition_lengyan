@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from copy import deepcopy
 from pathlib import Path
-from numbers import Integral
+from numbers import Integral, Real
 from types import SimpleNamespace
 from typing import Any
 
@@ -47,7 +48,7 @@ DEFAULT_CFG = SimpleNamespace(**DEFAULT_CFG_DICT)
 TRAIN_DEFAULTS = {key: deepcopy(DEFAULT_CFG_DICT[key]) for key in (
     "device", "seed", "epochs", "resume", "resume_checkpoint", "batch_size",
     "num_workers", "sampler", "optimizer", "lr", "weight_decay",
-    "early_stopping_patience", "use_amp", "two_views", "metrics_prior_alpha", "num_classes",
+    "early_stopping_patience", "use_amp", "two_views", "metrics_prior_alpha", "num_classes", "reporting", "visualize",
 )}
 TRAIN_DEFAULTS["optimizer_foreach"] = False
 
@@ -68,6 +69,13 @@ def validate_num_classes(value: Any, name: str = "num_classes") -> int | None:
     if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
         raise ValueError(f"{name} must be a positive integer or null (automatic), got {value!r}")
     return int(value)
+
+
+def validate_label_smoothing(value: Any) -> float:
+    """Zero disables smoothing; accept finite numeric values in [0, 1]."""
+    if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) or not 0 <= value <= 1:
+        raise ValueError(f"labelsmooth / loss.ce.label_smoothing must be a finite number in [0, 1], got {value!r}")
+    return float(value)
 
 
 def resolve_path(path: str | Path, base_dir: Path | None = None) -> Path:
@@ -300,6 +308,8 @@ def get_cfg(
             continue  # Optional CLI values must not override YAML defaults.
         if key in {"sequence_length", "length_policy"}:
             pipeline["data_cfg"][key] = deepcopy(value)
+        elif key == "labelsmooth":
+            pipeline.setdefault("loss", {}).setdefault("ce", {})["label_smoothing"] = validate_label_smoothing(value)
         elif key in train_keys:
             pipeline.setdefault("train", {})[key] = deepcopy(value)
             if key == "device":
@@ -311,6 +321,11 @@ def get_cfg(
         else:
             raise ValueError(f"Unknown configuration override '{key}'; use train={{...}}, model={{...}}, data_cfg={{...}}, augment={{...}}, loss={{...}} or a dotted key")
     pipeline["train"] = deep_update(TRAIN_DEFAULTS, pipeline.get("train", {}))
+    if not isinstance(pipeline["train"]["visualize"], bool):
+        raise TypeError("visualize must be true/false")
+    ce_cfg = pipeline.get("loss", {}).get("ce", {})
+    if "label_smoothing" in ce_cfg:
+        ce_cfg["label_smoothing"] = validate_label_smoothing(ce_cfg["label_smoothing"])
     pipeline["train"]["num_classes"] = validate_num_classes(pipeline["train"].get("num_classes"), "train.num_classes")
     if pipeline["train"]["num_classes"] is not None:
         pipeline["data_cfg"]["num_classes"] = pipeline["train"]["num_classes"]
@@ -348,6 +363,9 @@ def entrypoint(argv: list[str] | None = None) -> None:
     add_common(train_parser)
     train_parser.add_argument("--epochs", type=int, default=None)
     train_parser.add_argument("--batch-size", type=int, default=None)
+    train_parser.add_argument("--labelsmooth", type=float, default=None, help="Label smoothing in [0, 1]; 0 disables it")
+    train_parser.add_argument("--visualize", action=argparse.BooleanOptionalAction, default=None,
+                              help="Save training figures and validation t-SNE (default: enabled)")
     train_parser.add_argument("--resume", action="store_true", default=None)
     train_parser.add_argument("--resume-checkpoint", default=None)
 
@@ -378,6 +396,8 @@ def entrypoint(argv: list[str] | None = None) -> None:
             output_dir=args.output_dir,
             epochs=args.epochs,
             batch_size=args.batch_size,
+            labelsmooth=args.labelsmooth,
+            visualize=args.visualize,
             num_classes=args.num_classes,
         )
         return

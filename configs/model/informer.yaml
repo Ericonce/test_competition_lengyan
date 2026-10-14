@@ -1,0 +1,10 @@
+name: informer
+in_channels: 3
+type: informer
+d_model: 128
+n_heads: 4
+e_layers: 3
+d_ff: 512
+factor: 5
+dropout: 0.1
+distil: true

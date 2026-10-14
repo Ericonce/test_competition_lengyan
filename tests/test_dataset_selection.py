@@ -156,13 +156,13 @@ def test_train_only_skips_validation_scheduler_and_early_stop(data, tmp_path):
     with patch.object(BaseTrainer, "_run_epoch", run), patch.object(torch.optim.lr_scheduler.ReduceLROnPlateau, "step") as scheduler_step:
         result = PulseCLS().train(pipeline=cfg)
     assert scheduler_step.call_count == 0
-    assert len(calls) == 4 and all(loader is calls[0] for loader in calls)
+    assert len(calls) == 3 and all(loader is calls[0] for loader in calls)
     assert result["epoch"] == 3 and result["validation_enabled"] is False
     assert result["evaluation_split"] == "train"
     assert not (folder / "best_model.pt").exists()
     assert (folder / "last_model.pt").exists() and (folder / "final_model.pt").exists()
     history = pd.read_csv(folder / "training_history.csv")
-    assert len(history) == 3 and not any(key.startswith("val_") for key in history.columns)
+    assert len(history) == 3 and history[["val_accuracy", "val_macro_f1"]].isna().all().all()
     membership = json.loads((folder / "dataset_selection.json").read_text())
     assert membership["sampled_count"] == membership["train_count"] == 20 and membership["val_count"] == 0
     assert sum(torch.load(folder / "final_model.pt", weights_only=False)["train_class_counts"]) == 20

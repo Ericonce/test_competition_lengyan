@@ -33,7 +33,7 @@ def test_missing_actual_pri_fails(tmp_path):
 
 def test_augment_treats_pri_as_a_value_channel():
     x = torch.ones(2, 3, 16)
-    augment = PulseAugment(noise_std=.2, scale_std=0, pulse_mask_prob=0,
+    augment = PulseAugment(noise_snr_db=20, scale_std=0, pulse_mask_prob=0,
                            feature_mask_prob=0)
     y = augment(x)
     assert not torch.allclose(y[:, 2], x[:, 2])

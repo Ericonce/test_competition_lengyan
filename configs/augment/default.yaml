@@ -2,8 +2,11 @@
 # 使用：开启所需方法的 enabled，调整其参数，再用 order 指定执行先后。
 # 多种方法串联：后一种方法处理前一种方法的增强结果；关闭的方法自动跳过。
 # methods 下的分类只用于阅读，真正执行顺序由 order 决定。
-# 默认开启 jittering、scaling、pulse_mask、feature_mask，其余方法默认关闭。
-# 数值扰动作用于训练标准化后的特征，std 不是 MHz/us 等物理单位。
+# 每个方法的 enabled 决定是否启用；默认开关以本文件中的实际设置为准。
+# 所有方法先处理原始 CF/PW/PRI，再按固定训练集均值和标准差归一化。
+# 加性噪声用 snr_db：单位 dB，越小噪声越强；每条序列、每个通道独立计算能量。
+# scaling/magnitude_warping/time_warping 的 std 是系数波动强度，保持原含义。
+# 填充的零尾部不参与增强；局部噪声的 SNR 只针对所选窗口/时频框。
 # 数值、频谱、遮蔽及序列变换都处理 CF/PW/PRI，PRI 不需要保持递增。
 # 频域中的“频率”指特征沿脉冲序列变化的频谱，不是直接修改雷达载频。
 # 同类融合只从当前训练 batch 选择同类别样本；该类别仅有一个样本时跳过。
@@ -58,7 +61,7 @@ methods:
   jittering:
     enabled: false  # 方法开关：true 开启，false 关闭
     prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
-    std: 0.01  # 扰动标准差；越大变化越强
+    snr_db: 40.0  # 特征信噪比（dB）；越小噪声越强，关闭请用 enabled: false
 
   # 幅值缩放：随机乘一个接近 1 的系数，模拟特征幅度变化。
   scaling:
@@ -66,7 +69,7 @@ methods:
     prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
     std: 0.02  # 缩放系数的标准差；系数围绕 1 波动
 
-  # 旋转：在标准化后的 CF/PW 平面混合前两个特征，PRI 保持不变。
+  # 旋转：在原始 CF/PW 数值平面混合前两个特征，PRI 保持不变。
   rotation:
     enabled: false  # 方法开关：true 开启，false 关闭
     prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
@@ -83,7 +86,7 @@ methods:
   white_noise_windows:
     enabled: false  # 方法开关：true 开启，false 关闭
     prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
-    std: 0.02  # 扰动标准差；越大变化越强
+    snr_db: 40.0  # 特征信噪比（dB）；越小噪声越强，关闭请用 enabled: false
     window_ratio: 0.2  # 局部窗口占序列长度的比例
 
 
@@ -158,7 +161,7 @@ methods:
   random_noise_boxes:
     enabled: false  # 方法开关：true 开启，false 关闭
     prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
-    std: 0.02  # 扰动标准差；越大变化越强
+    snr_db: 40.0  # 特征信噪比（dB）；越小噪声越强，关闭请用 enabled: false
     time_ratio: 0.2  # 矩形区域占时频图时间轴的比例
     frequency_ratio: 0.1  # 矩形区域占时频图频率轴的比例
     n_fft: 32  # 短时傅里叶变换窗口长度（采样点数）
@@ -223,7 +226,7 @@ methods:
   spawner:
     enabled: false  # 方法开关：true 开启，false 关闭
     prob: 1.0  # 开启后的触发概率，范围 0–1；1 表示每次触发
-    std: 0.01  # 扰动标准差；越大变化越强
+    snr_db: 40.0  # 特征信噪比（dB）；越小噪声越强，关闭请用 enabled: false
     window_ratio: 0.1  # DTW 允许偏离对齐对角线的窗口比例
     max_points: 64  # DTW 对齐最多使用的点数，越大越细但越慢
 
