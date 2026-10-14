@@ -28,6 +28,8 @@ python .\infer\resnet_softmax_synthetic\infer.py
 
 推理范例 `infer/infer_cnn_softmax_synthetic.py` 可设置输入文件夹、权重、输出目录与可选标签 TXT。结果为 predictions.csv，指定标签后计算 Macro F1 等指标。多模型投票使用 `infer/infer_vote.py` 和 `configs/inference/vote.yaml`；关闭的成员需训练并填写权重后再开启。
 
+实验结果对比图运行 `python scripts/plot_f1_comparison.py`，路径在脚本底部修改。脚本核对各方法的验证划分，并从保存的投票预测 CSV 与测试标签重新计算测试 Macro F1；验证集与测试集分面展示，输出 PNG、SVG、PDF 和指标 CSV 到 `results/figures/f1_comparison_synthetic/`，无需重新训练或推理。
+
 ## 有新数据集时怎么做
 
 1. 将训练/验证总池整理为 `datasets/<数据集名>/<类别编号>/*.csv`，每个 CSV 是一条 CF/PW/PRI 序列。

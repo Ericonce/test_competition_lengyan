@@ -84,11 +84,11 @@ python .\infer\infer.py --source datasets/synthetic_radar_test --labels-file dat
 
 终端默认显示 `Read input CSV`（完成读取的序列数）和 `Inference`（完成预测的序列数）两条进度，包括百分比、速度、耗时和预计剩余时间；最后一个不满 batch 的批次也按实际序列数计数。加载权重、初始化模型、写预测 CSV 和计算指标时显示阶段名称与耗时，每秒刷新。权重/压缩缓存读写无法准确预知百分比，因此这些步骤显示 `working`，不伪造完成比例。
 
-需要关闭推理进度时，在调用中追加 `inference={"progress": False}`；投票可设置 `vote.yaml` 的 `progress: false`。训练的数据索引、采样文件检查、CSV 加载、缓存读写与标准化同样显示进度，可使用 `data_cfg={"progress": False}` 关闭这些数据准备提示。显示模块使用项目已有的 `tqdm`，无需增加其他依赖。
+需要关闭推理进度时，在调用中设置 `inference={"progress": False}`；投票入口设置 `progress=False`。训练的数据索引、采样文件检查、CSV 加载、缓存读写与标准化同样显示进度，可使用 `data_cfg={"progress": False}` 关闭这些数据准备提示。显示模块使用项目已有的 `tqdm`，无需增加其他依赖。
 
 ## 多模型投票
 
-投票入口也在 `model.infer_vote()` 中直接列出常用参数和每个模型的 pipeline/checkpoint/开关。调用参数优先于 `configs/inference/vote.yaml`；删除对应参数可继承 YAML，或使用 `--config` 显式选择配置。配置字段：
+投票入口与各模型的独立推理文件采用相同写法，直接在 `model.infer_vote()` 中填写常用参数和每个模型的 pipeline/checkpoint/开关，无需命令行参数。调用参数优先于 `configs/inference/vote.yaml`；删除对应参数可继承 YAML。更换投票 YAML 时直接修改调用中的 `config` 路径；若希望使用 YAML 中的成员列表，删除调用中的 `models` 参数。配置字段：
 
 - `source`：CSV 文件夹。
 - `labels_file`：可选标签 TXT；`null` 只推理。
@@ -98,10 +98,11 @@ python .\infer\infer.py --source datasets/synthetic_radar_test --labels-file dat
 
 ```powershell
 python .\infer\infer_vote.py
-python .\infer\infer_vote.py --source datasets/synthetic_radar_test --labels-file datasets/synthetic_radar_test/labels.txt
 ```
 
-各成员必须在同一套辐射源及标签编号上训练；现有 TSRD/真实数据权重不能直接加入合成数据投票。示例中只有 CNN 默认开启，其他成员是关闭的配置示例，需要先在相同合成数据上训练并填写对应权重。投票成员全部引用对应 synthetic pipeline，测试输入始终来自 `source` 文件夹。
+修改脚本中的 `source` 指定测试文件夹，`output_dir` 指定结果目录；将 `labels_file=""` 改为测试目录的 `labels.txt` 路径后进行评估。通过各成员的 `enabled=True/False` 选择参与模型，通过 `main_model` 指定已开启的主模型。只有一个成员开启时，投票结果等于该成员的预测。
+
+各成员必须在同一套辐射源及标签编号上训练；现有 TSRD/真实数据权重不能直接加入合成数据投票。开启前须填写对应已训练权重。投票成员全部引用对应 synthetic pipeline，测试输入始终来自 `source` 文件夹。
 
 选择票数最多的类别；最高票并列时，主模型预测若属于并列候选则选择主模型，否则选择并列候选中编号最小的类别。所有模型预测均不相同时，必然采用主模型预测。
 

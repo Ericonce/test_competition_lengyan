@@ -72,14 +72,3 @@ def test_cli_output_directory_changes_automatic_checkpoint_and_predictions(monke
         assert kwargs["output_dir"] == "results/another_training_run"
     with patch.object(PulseCLS, "infer", capture):
         runpy.run_path(str(entry), run_name="__main__")
-
-
-def test_custom_vote_cli_retains_yaml_members_and_accepts_common_options(monkeypatch):
-    entry = REPO_ROOT / "infer/infer_vote.py"
-    config = REPO_ROOT / "configs/inference/vote.yaml"
-    monkeypatch.setattr("sys.argv", [str(entry), "--config", str(config), "--batch-size", "3",
-                        "--num-classes", "10", "--no-progress"])
-    def capture(self, config, **kwargs):
-        assert kwargs == {"batch_size": 3, "num_classes": 10, "progress": False}
-    with patch.object(PulseCLS, "infer_vote", capture):
-        runpy.run_path(str(entry), run_name="__main__")

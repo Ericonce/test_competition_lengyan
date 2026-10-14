@@ -1,7 +1,6 @@
 """投票推理入口：常用参数和各模型权重直接在 model.infer_vote() 中修改。"""
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -13,43 +12,21 @@ from pulsecls import PulseCLS
 
 
 def main():
-    parser = argparse.ArgumentParser(description="多模型投票推理，标签 TXT 可选")
-    parser.add_argument("--config", help="指定其他配置时，未提供的参数继承该 YAML")
-    parser.add_argument("--source")
-    parser.add_argument("--labels-file")
-    parser.add_argument("--output-dir")
-    parser.add_argument("--device")
-    parser.add_argument("--num-classes", type=int)
-    parser.add_argument("--batch-size", type=int)
-    parser.add_argument("--augment-yaml")
-    parser.add_argument("--sequence-length", type=int)
-    parser.add_argument("--no-progress", action="store_true", default=None)
-    args = parser.parse_args()
     model = PulseCLS()
-    if args.config is not None:
-        overrides = {key: getattr(args, key) for key in (
-            "source", "labels_file", "output_dir", "device", "num_classes",
-            "batch_size", "sequence_length",
-        ) if getattr(args, key) is not None}
-        if args.augment_yaml is not None:
-            overrides["augment"] = {"preset": args.augment_yaml}
-        if args.no_progress:
-            overrides["progress"] = False
-        return model.infer_vote(config=args.config, **overrides)
-
+    # 显式参数优先于 YAML；只有 enabled=True 的模型参与投票。
     return model.infer_vote(
         config=PROJECT_ROOT / "configs/inference/vote.yaml",
-        source=args.source or PROJECT_ROOT / "datasets/synthetic_radar_test",
-        output_dir=args.output_dir or PROJECT_ROOT / "results/infer_vote",
-        labels_file=args.labels_file if args.labels_file is not None else "",  # 填写 labels.txt 才评估。
-        main_model="cnn_softmax",  # 最高票并列时优先采用此模型。
-        num_classes=args.num_classes if args.num_classes is not None else 100,
-        device=args.device or "auto",
-        batch_size=args.batch_size if args.batch_size is not None else 256,
-        progress=not args.no_progress,
-        sequence_length=args.sequence_length if args.sequence_length is not None else 256,
-        length_policy={"short": "zero", "long": "head"},
-        augment={"preset": args.augment_yaml or PROJECT_ROOT / "configs/augment/default.yaml"},
+        source=PROJECT_ROOT / "datasets/synthetic_radar_test",
+        output_dir=PROJECT_ROOT / "results/infer_vote",  # predictions.csv 保存在此目录。
+        labels_file="",  # 只预测；填写测试目录的 labels.txt 路径后评估。
+        main_model="cnn_softmax",  # 主模型须开启；预测处于最高票并列候选时优先采用。
+        num_classes=100,  # 统一各成员的输出类别数；None 继承 YAML/权重。
+        device="auto",  # 优先 CUDA，其次昇腾 NPU，最后 CPU。
+        batch_size=256,
+        progress=True,  # 显示每个启用模型的数据读取与推理进度。
+        sequence_length=256,
+        length_policy={"short": "zero", "long": "head"},  # short：zero/repeat；long：head/center。
+        augment={"preset": PROJECT_ROOT / "configs/augment/default.yaml"},  # 配置引用；推理不执行随机增强。
         models=[
             {
                 "name": "cnn_softmax",
@@ -59,21 +36,27 @@ def main():
             },
             {
                 "name": "modular_multigrain_iq",
-                "enabled": False,  # 先训练同一套辐射源，再改为 True。
+                "enabled": True,  # 各成员须使用相同的辐射源类别与标签编号训练。
                 "pipeline": PROJECT_ROOT / "configs/pipeline/modular_multigrain_iq_synthetic.yaml",
                 "checkpoint": PROJECT_ROOT / "results/modular_multigrain_iq_synthetic/best_model.pt",
             },
             {
                 "name": "pulse_hypothesis_fused",
-                "enabled": False,
+                "enabled": True,
                 "pipeline": PROJECT_ROOT / "configs/pipeline/pulse_hypothesis_fused_synthetic.yaml",
                 "checkpoint": PROJECT_ROOT / "results/pulse_hypothesis_fused_synthetic/best_model.pt",
             },
             {
                 "name": "resnet_softmax",
-                "enabled": False,  # 训练同一套辐射源后可参与投票。
+                "enabled": True,
                 "pipeline": PROJECT_ROOT / "configs/pipeline/resnet_softmax_synthetic.yaml",
                 "checkpoint": PROJECT_ROOT / "results/resnet_softmax_synthetic/best_model.pt",
+            },
+            {
+                "name": "invconv1d",
+                "enabled": True,
+                "pipeline": PROJECT_ROOT / "configs/pipeline/invconv1d_synthetic.yaml",
+                "checkpoint": PROJECT_ROOT / "results/invconv1d_synthetic/best_model.pt",
             },
         ],
     )

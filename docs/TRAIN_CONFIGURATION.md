@@ -53,7 +53,7 @@ return model.infer(
 
 推理直接读取平铺 CSV 文件夹，不使用测试 data.yaml。save_dir 是 CSV 输出目录；checkpoint 是显式权重路径，无验证集训练后用 final_model.pt。推理不执行随机增强，增强 YAML 引用只用于配置。
 
-infer/infer_vote.py 同样直接填写各模型的 pipeline、checkpoint 与 enabled，并列出统一的 num_classes、batch_size、长度和进度参数。通用 infer/infer.py 保留 CLI；--pipeline 指定其他模型时，未提供的选项继承其 YAML。投票 --config 同理。
+infer/infer_vote.py 同样直接填写各模型的 pipeline、checkpoint 与 enabled，并列出统一的 num_classes、batch_size、长度和进度参数，无需命令行参数。更换投票 YAML 时直接修改 config 路径；显式参数仍优先于 YAML。通用 infer/infer.py 保留 CLI；--pipeline 指定其他模型时，未提供的选项继承其 YAML。
 
 ## 修改详细配置
 

@@ -56,4 +56,4 @@ python infer/resnet_softmax_synthetic/infer.py
 
 ## 加入多模型投票
 
-infer/infer_vote.py 和 configs/inference/vote.yaml 已添加 resnet_softmax 成员示例，默认关闭。先在与其他成员相同的辐射源及标签编号上训练，再设置 enabled=True 并填写对应 checkpoint；调用中的成员列表优先于投票 YAML。规则见 [投票推理](INFERENCE_AND_TEST_DATA.md)。
+infer/infer_vote.py 和 configs/inference/vote.yaml 已添加 resnet_softmax 成员。先在与其他成员相同的辐射源及标签编号上训练，再在 model.infer_vote() 调用中设置 enabled=True 并填写对应 checkpoint；调用中的成员列表优先于投票 YAML。不参与时设置 enabled=False。规则见 [投票推理](INFERENCE_AND_TEST_DATA.md)。
