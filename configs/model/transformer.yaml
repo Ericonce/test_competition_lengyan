@@ -6,3 +6,4 @@ n_heads: 4
 num_layers: 3
 dim_feedforward: 512
 dropout: 0.1
+npu_attention_backend: auto  # 昇腾 FP16/BF16 优先融合注意力；FP32 使用 NPU 矩阵运算。

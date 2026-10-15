@@ -1,0 +1,6 @@
+{
+  "num_sequences": 11,
+  "num_classes": 3,
+  "evaluated": false,
+  "predictions_csv": "F:\\competition\\outputs\\pytest_epoch_progress_20261014_1\\test_folder_inference_csv_opti0\\predictions\\predictions.csv"
+}

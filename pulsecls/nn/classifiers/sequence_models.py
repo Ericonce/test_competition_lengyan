@@ -11,14 +11,17 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from pulsecls.nn.modules.npu_sequence import causal_linear_conv1d, causal_phase_conv1d, encode_sequence
+
 
 def _output(embedding: torch.Tensor, classifier: nn.Module, dropout: nn.Module) -> dict[str, torch.Tensor]:
     return {"logits": classifier(dropout(embedding)), "stream_embedding": embedding}
 
 
 class _CausalResidualBlock(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int, kernel: int, dilation: int, dropout: float) -> None:
+    def __init__(self, in_ch: int, out_ch: int, kernel: int, dilation: int, dropout: float, npu_backend="native") -> None:
         super().__init__()
+        self.npu_backend = npu_backend
         self.left_pad = (kernel - 1) * dilation
         self.conv1 = nn.Conv1d(in_ch, out_ch, kernel, dilation=dilation)
         self.conv2 = nn.Conv1d(out_ch, out_ch, kernel, dilation=dilation)
@@ -26,9 +29,15 @@ class _CausalResidualBlock(nn.Module):
         self.projection = nn.Identity() if in_ch == out_ch else nn.Conv1d(in_ch, out_ch, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = self.drop(F.gelu(self.conv1(F.pad(x, (self.left_pad, 0)))))
-        y = self.drop(F.gelu(self.conv2(F.pad(y, (self.left_pad, 0)))))
-        return F.gelu(y + self.projection(x))
+        if x.device.type == "npu" and self.npu_backend in {"phase", "linear"}:
+            convolution = causal_phase_conv1d if self.npu_backend == "phase" else causal_linear_conv1d
+            y = self.drop(F.gelu(convolution(self.conv1, x)))
+            y = self.drop(F.gelu(convolution(self.conv2, y)))
+        else:
+            y = self.drop(F.gelu(self.conv1(F.pad(x, (self.left_pad, 0)))))
+            y = self.drop(F.gelu(self.conv2(F.pad(y, (self.left_pad, 0)))))
+        residual = causal_linear_conv1d(self.projection, x) if x.device.type == "npu" and self.npu_backend == "linear" and isinstance(self.projection, nn.Conv1d) else self.projection(x)
+        return F.gelu(y + residual)
 
 
 class TCNClassifier(nn.Module):
@@ -38,10 +47,13 @@ class TCNClassifier(nn.Module):
         channels = [int(v) for v in cfg.get("channels", [64, 64, 128, 128])]
         kernel = int(cfg.get("kernel_size", 3))
         dropout = float(cfg.get("dropout", 0.1))
+        npu_backend = str(cfg.get("npu_conv_backend", "native"))
+        if npu_backend not in {"native", "phase", "linear"}:
+            raise ValueError("tcn npu_conv_backend must be native, phase or linear")
         layers = []
         current = int(cfg.get("in_channels", 3))
         for level, width in enumerate(channels):
-            layers.append(_CausalResidualBlock(current, width, kernel, 2 ** level, dropout))
+            layers.append(_CausalResidualBlock(current, width, kernel, 2 ** level, dropout, npu_backend))
             current = width
         self.network = nn.Sequential(*layers)
         self.dropout = nn.Dropout(dropout)
@@ -154,6 +166,9 @@ class TransformerClassifier(nn.Module):
         if width % heads:
             raise ValueError("transformer d_model must be divisible by n_heads")
         depth = int(cfg.get("num_layers", 3))
+        self.npu_attention_backend = str(cfg.get("npu_attention_backend", "auto"))
+        if self.npu_attention_backend not in {"auto", "fusion", "math", "native"}:
+            raise ValueError("transformer npu_attention_backend must be auto, fusion, math or native")
         dropout = float(cfg.get("dropout", 0.1))
         self.input_projection = nn.Linear(int(cfg.get("in_channels", 3)), width)
         self.position = nn.Parameter(torch.zeros(1, int(cfg.get("sequence_length", 256)), width))
@@ -170,7 +185,12 @@ class TransformerClassifier(nn.Module):
         x = self.input_projection(inputs.transpose(1, 2))
         if x.shape[1] > self.position.shape[1]:
             raise ValueError(f"input length {x.shape[1]} exceeds configured sequence_length {self.position.shape[1]}")
-        embedding = self.encoder(x + self.position[:, :x.shape[1]]).mean(dim=1)
+        tokens = x + self.position[:, :x.shape[1]]
+        if tokens.device.type == "npu" and self.npu_attention_backend != "native":
+            tokens = encode_sequence(self.encoder, tokens, backend=self.npu_attention_backend)
+        else:
+            tokens = self.encoder(tokens)
+        embedding = tokens.mean(dim=1)
         return _output(embedding, self.classifier, self.dropout)
 
 

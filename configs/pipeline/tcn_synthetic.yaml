@@ -36,6 +36,8 @@ train:
   weight_decay: 0.0001
   early_stopping_patience: 6
   use_amp: true
+  amp_dtype: float16
+  progress_metric_interval: 10
   two_views: false
   metrics_prior_alpha: 0.0
   resume: false
@@ -62,3 +64,5 @@ inference:
   save_dir: null
   batch_size: 256
   progress: true
+  use_amp: true
+  amp_dtype: float16

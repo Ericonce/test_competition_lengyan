@@ -14,7 +14,7 @@ from pulsecls.cfg import normalize_dataset_path, remap_repo_path, validate_num_c
 from pulsecls.data.dataset import PulseArrayDataset, load_split_arrays, zero_padding_enabled
 from pulsecls.data.selection import validation_enabled
 from pulsecls.nn.tasks import build_model
-from pulsecls.utils.device import get_device, pin_memory_for
+from pulsecls.utils.device import amp_dtype_for, autocast_context, get_device, pin_memory_for, use_amp_for
 from pulsecls.utils.metrics import compute_metrics, save_classification_outputs
 from pulsecls.utils.progress import Progress
 
@@ -34,6 +34,8 @@ class BasePredictor:
         if device_spec is None:
             device_spec = pipeline.get("train", {}).get("device")
         self.device = get_device(device_spec)
+        self.use_amp = use_amp_for(self.device, inference_cfg.get("use_amp", False))
+        self.amp_dtype = amp_dtype_for(self.device, inference_cfg.get("amp_dtype", pipeline.get("train", {}).get("amp_dtype", "float16")))
         print(f"Using inference device: {self.device}")
         with Progress(f"Load checkpoint {self.checkpoint_path.name}", unit="steps", enabled=self.show_progress):
             self.checkpoint = torch.load(
@@ -130,16 +132,22 @@ class BasePredictor:
             if lazy:
                 dataset.on_loaded = loading.update
             try:
+                progress.stage("initialize data loader")
                 iterator = iter(loader)
                 for batch_number in range(1, len(loader) + 1):
                     progress.stage(f"batch {batch_number}/{len(loader)}: loading" if lazy else f"batch {batch_number}/{len(loader)}")
                     features, _, _ = next(iterator)
+                    progress.stage(f"batch {batch_number}/{len(loader)}: transfer to {self.device}")
+                    features = features.to(self.device, non_blocking=True)
                     progress.stage(f"batch {batch_number}/{len(loader)}: predicting")
-                    logits = self._adapt_logits(self.model(features.to(self.device, non_blocking=True))["logits"])
+                    with autocast_context(self.device, self.use_amp, self.amp_dtype):
+                        logits = self._adapt_logits(self.model(features)["logits"])
+                    logits = logits.float()
                     if self.prior_alpha != 0.0:
                         logits = logits - self.prior_alpha * self.log_priors.to(logits.device, logits.dtype)
                     probs = torch.softmax(logits, dim=1)
                     score, predicted = probs.max(dim=1)
+                    progress.stage(f"batch {batch_number}/{len(loader)}: collect predictions")
                     predictions.append(predicted.cpu().numpy())
                     confidence.append(score.cpu().numpy())
                     progress.update(features.size(0))

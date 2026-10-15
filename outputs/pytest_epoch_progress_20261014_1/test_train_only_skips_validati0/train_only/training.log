@@ -1,0 +1,240 @@
+Training started: 2026-10-14T23:33:35.896837+08:00
+Training classes: 2
+
+Effective data.yaml:
+name: synthetic_radar
+root: F:\competition\outputs\pytest_epoch_progress_20261014_1\test_train_only_skips_validati0\raw
+root_relative_to_yaml: true
+num_classes: 2
+features:
+- CF_MHz
+- PW_us
+- PRI_us
+cache: true
+all: .
+sequence_length: 16
+length_policy:
+  short: zero
+  long: head
+selection:
+  sample_ratio: 0.5
+  train_ratio: 1.0
+  val_ratio: 0.0
+  seed: 2026
+  stratified: true
+
+
+Effective augment.yaml:
+enabled: false
+
+
+Effective model.yaml:
+type: cnn1d
+in_channels: 3
+hidden_channels:
+- 8
+- 16
+stream_embedding_dim: 8
+pulse_embedding_dim: 8
+contrast_dim: 4
+dropout: 0.2
+
+
+Effective pipeline/train settings:
+task: classify
+output_dir: F:\competition\outputs\pytest_epoch_progress_20261014_1\test_train_only_skips_validati0\train_only
+train:
+  device: cpu
+  seed: 2026
+  epochs: 3
+  resume: false
+  resume_checkpoint: null
+  batch_size: 4
+  num_workers: 0
+  sampler: random
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 0
+  use_amp: false
+  two_views: true
+  metrics_prior_alpha: 0.0
+  num_classes: null
+  reporting:
+    dpi: 300
+    formats:
+    - png
+    - svg
+    - pdf
+    tsne:
+      max_samples: 3000
+      seed: 2026
+      perplexity: 30.0
+      max_iter: 1000
+  visualize: true
+  optimizer_foreach: false
+loss:
+  ce:
+    weight: 1.0
+inference:
+  num_classes: null
+
+Using device: cpu
+
+Read dataset index: working [00:00]
+Read dataset index: working [00:00, done]
+
+Sample and split sequences: working [00:00]
+Sample and split sequences: working [00:00, done]
+
+Check sampled files:   0%|          | 0/20 [00:00<?, ?file/s]
+Check sampled files: 100%|██████████| 20/20 [00:00<00:00, 9993.58file/s]
+Data selection: total=40, sampled=20, train=20, val=0
+
+Load train CSV:   0%|          | 0/20 [00:00<?, ?seq/s]
+Load train CSV: 100%|██████████| 20/20 [00:00<00:00, 300.26seq/s]
+Loaded 20 samples from pipeline:train in 0.1s
+
+Write train cache: working [00:00]
+Write train cache: working [00:00, done]
+Saved cache: F:\competition\outputs\pytest_epoch_progress_20261014_1\test_train_only_skips_validati0\raw\.pulsecls_cache\train_seq16_c3_b37e6102d224.npz
+
+Prepare raw train/val data and normalization statistics: working [00:00]
+Prepare raw train/val data and normalization statistics: working [00:00, done]
+Validation disabled: train all requested epochs; save final_model.pt; no early stopping or validation LR scheduling.
+Train feature mean: [6052.19482421875, 43.406517028808594, 1255.701416015625]
+Train feature std: [1510.755859375, 5.204498767852783, 139.02105712890625]
+Effective runtime settings: {'device': 'cpu', 'accelerator': None, 'validation_enabled': False, 'use_amp': False, 'initial_epoch': 0, 'additional_epochs': 3, 'optimizer': 'AdamW', 'optimizer_initial_lr': [0.001], 'optimizer_weight_decay': [0.0001]}
+
+Epoch 1/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s]
+Epoch 1/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, initialize data loader]
+Epoch 1/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: loading]    
+Epoch 1/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: transfer to cpu]
+Epoch 1/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: forward / loss] 
+Epoch 1/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: backward]      
+Epoch 1/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: optimizer step]
+Epoch 1/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: collect metrics]
+Epoch 1/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: completed, loss=0.9207, acc=0.5000]
+Epoch 1/3 Train:  20%|██        | 1/5 [00:00<00:00, 66.64batch/s, batch 2/5: loading]                   
+Epoch 1/3 Train:  20%|██        | 1/5 [00:00<00:00, 62.47batch/s, batch 2/5: transfer to cpu]
+Epoch 1/3 Train:  20%|██        | 1/5 [00:00<00:00, 62.47batch/s, batch 2/5: forward / loss] 
+Epoch 1/3 Train:  20%|██        | 1/5 [00:00<00:00, 58.80batch/s, batch 2/5: backward]      
+Epoch 1/3 Train:  20%|██        | 1/5 [00:00<00:00, 58.80batch/s, batch 2/5: optimizer step]
+Epoch 1/3 Train:  20%|██        | 1/5 [00:00<00:00, 55.54batch/s, batch 2/5: collect metrics]
+Epoch 1/3 Train:  20%|██        | 1/5 [00:00<00:00, 55.54batch/s, batch 2/5: completed, loss=0.9237, acc=0.3750]
+Epoch 1/3 Train:  40%|████      | 2/5 [00:00<00:00, 111.07batch/s, batch 3/5: loading]                          
+Epoch 1/3 Train:  40%|████      | 2/5 [00:00<00:00, 111.07batch/s, batch 3/5: transfer to cpu]
+Epoch 1/3 Train:  40%|████      | 2/5 [00:00<00:00, 111.07batch/s, batch 3/5: forward / loss] 
+Epoch 1/3 Train:  40%|████      | 2/5 [00:00<00:00, 105.23batch/s, batch 3/5: backward]      
+Epoch 1/3 Train:  40%|████      | 2/5 [00:00<00:00, 105.23batch/s, batch 3/5: optimizer step]
+Epoch 1/3 Train:  40%|████      | 2/5 [00:00<00:00, 99.97batch/s, batch 3/5: collect metrics]
+Epoch 1/3 Train:  40%|████      | 2/5 [00:00<00:00, 99.97batch/s, batch 3/5: completed, loss=0.7860, acc=0.5000]
+Epoch 1/3 Train:  60%|██████    | 3/5 [00:00<00:00, 149.95batch/s, batch 4/5: loading]                          
+Epoch 1/3 Train:  60%|██████    | 3/5 [00:00<00:00, 149.95batch/s, batch 4/5: transfer to cpu]
+Epoch 1/3 Train:  60%|██████    | 3/5 [00:00<00:00, 149.95batch/s, batch 4/5: forward / loss] 
+Epoch 1/3 Train:  60%|██████    | 3/5 [00:00<00:00, 142.82batch/s, batch 4/5: backward]      
+Epoch 1/3 Train:  60%|██████    | 3/5 [00:00<00:00, 142.82batch/s, batch 4/5: optimizer step]
+Epoch 1/3 Train:  60%|██████    | 3/5 [00:00<00:00, 136.32batch/s, batch 4/5: collect metrics]
+Epoch 1/3 Train:  60%|██████    | 3/5 [00:00<00:00, 136.32batch/s, batch 4/5: completed, loss=0.8245, acc=0.5000]
+Epoch 1/3 Train:  80%|████████  | 4/5 [00:00<00:00, 181.77batch/s, batch 5/5: loading]                           
+Epoch 1/3 Train:  80%|████████  | 4/5 [00:00<00:00, 181.77batch/s, batch 5/5: transfer to cpu]
+Epoch 1/3 Train:  80%|████████  | 4/5 [00:00<00:00, 181.77batch/s, batch 5/5: forward / loss] 
+Epoch 1/3 Train:  80%|████████  | 4/5 [00:00<00:00, 173.86batch/s, batch 5/5: backward]      
+Epoch 1/3 Train:  80%|████████  | 4/5 [00:00<00:00, 166.61batch/s, batch 5/5: optimizer step]
+Epoch 1/3 Train:  80%|████████  | 4/5 [00:00<00:00, 166.61batch/s, batch 5/5: collect metrics]
+Epoch 1/3 Train:  80%|████████  | 4/5 [00:00<00:00, 166.61batch/s, batch 5/5: completed, loss=0.8264, acc=0.4500]
+Epoch 1/3 Train: 100%|██████████| 5/5 [00:00<00:00, 208.26batch/s, done, loss=0.8264, acc=0.4500]                
+Epoch 1/3 Train: 100%|██████████| 5/5 [00:00<00:00, 199.95batch/s, done, loss=0.8264, acc=0.4500]
+Epoch 01 | loss=0.8264 | train_acc=0.4500 | train_macro_f1=0.4373 | validation=disabled | lr=1.00e-03 | 0.0s
+
+Epoch 2/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s]
+Epoch 2/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, initialize data loader]
+Epoch 2/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: loading]    
+Epoch 2/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: transfer to cpu]
+Epoch 2/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: forward / loss] 
+Epoch 2/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: backward]      
+Epoch 2/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: optimizer step]
+Epoch 2/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: collect metrics]
+Epoch 2/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: completed, loss=1.0118, acc=0.2500]
+Epoch 2/3 Train:  20%|██        | 1/5 [00:00<00:00, 333.01batch/s, batch 2/5: loading]                  
+Epoch 2/3 Train:  20%|██        | 1/5 [00:00<00:00, 333.01batch/s, batch 2/5: transfer to cpu]
+Epoch 2/3 Train:  20%|██        | 1/5 [00:00<00:00, 333.01batch/s, batch 2/5: forward / loss] 
+Epoch 2/3 Train:  20%|██        | 1/5 [00:00<00:00, 249.74batch/s, batch 2/5: backward]      
+Epoch 2/3 Train:  20%|██        | 1/5 [00:00<00:00, 199.80batch/s, batch 2/5: optimizer step]
+Epoch 2/3 Train:  20%|██        | 1/5 [00:00<00:00, 199.80batch/s, batch 2/5: collect metrics]
+Epoch 2/3 Train:  20%|██        | 1/5 [00:00<00:00, 199.80batch/s, batch 2/5: completed, loss=0.7943, acc=0.5000]
+Epoch 2/3 Train:  40%|████      | 2/5 [00:00<00:00, 333.16batch/s, batch 3/5: loading]                           
+Epoch 2/3 Train:  40%|████      | 2/5 [00:00<00:00, 333.16batch/s, batch 3/5: transfer to cpu]
+Epoch 2/3 Train:  40%|████      | 2/5 [00:00<00:00, 333.16batch/s, batch 3/5: forward / loss] 
+Epoch 2/3 Train:  40%|████      | 2/5 [00:00<00:00, 333.16batch/s, batch 3/5: backward]      
+Epoch 2/3 Train:  40%|████      | 2/5 [00:00<00:00, 285.60batch/s, batch 3/5: optimizer step]
+Epoch 2/3 Train:  40%|████      | 2/5 [00:00<00:00, 285.60batch/s, batch 3/5: collect metrics]
+Epoch 2/3 Train:  40%|████      | 2/5 [00:00<00:00, 285.60batch/s, batch 3/5: completed, loss=0.7258, acc=0.5833]
+Epoch 2/3 Train:  60%|██████    | 3/5 [00:00<00:00, 428.40batch/s, batch 4/5: loading]                           
+Epoch 2/3 Train:  60%|██████    | 3/5 [00:00<00:00, 374.87batch/s, batch 4/5: transfer to cpu]
+Epoch 2/3 Train:  60%|██████    | 3/5 [00:00<00:00, 374.87batch/s, batch 4/5: forward / loss] 
+Epoch 2/3 Train:  60%|██████    | 3/5 [00:00<00:00, 374.87batch/s, batch 4/5: backward]      
+Epoch 2/3 Train:  60%|██████    | 3/5 [00:00<00:00, 333.23batch/s, batch 4/5: optimizer step]
+Epoch 2/3 Train:  60%|██████    | 3/5 [00:00<00:00, 333.23batch/s, batch 4/5: collect metrics]
+Epoch 2/3 Train:  60%|██████    | 3/5 [00:00<00:00, 299.91batch/s, batch 4/5: completed, loss=0.7037, acc=0.5625]
+Epoch 2/3 Train:  80%|████████  | 4/5 [00:00<00:00, 399.88batch/s, batch 5/5: loading]                           
+Epoch 2/3 Train:  80%|████████  | 4/5 [00:00<00:00, 399.88batch/s, batch 5/5: transfer to cpu]
+Epoch 2/3 Train:  80%|████████  | 4/5 [00:00<00:00, 399.88batch/s, batch 5/5: forward / loss] 
+Epoch 2/3 Train:  80%|████████  | 4/5 [00:00<00:00, 363.53batch/s, batch 5/5: backward]      
+Epoch 2/3 Train:  80%|████████  | 4/5 [00:00<00:00, 363.53batch/s, batch 5/5: optimizer step]
+Epoch 2/3 Train:  80%|████████  | 4/5 [00:00<00:00, 333.26batch/s, batch 5/5: collect metrics]
+Epoch 2/3 Train:  80%|████████  | 4/5 [00:00<00:00, 333.26batch/s, batch 5/5: completed, loss=0.6482, acc=0.6500]
+Epoch 2/3 Train: 100%|██████████| 5/5 [00:00<00:00, 416.57batch/s, done, loss=0.6482, acc=0.6500]                
+Epoch 2/3 Train: 100%|██████████| 5/5 [00:00<00:00, 416.57batch/s, done, loss=0.6482, acc=0.6500]
+Epoch 02 | loss=0.6482 | train_acc=0.6500 | train_macro_f1=0.6267 | validation=disabled | lr=1.00e-03 | 0.0s
+
+Epoch 3/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s]
+Epoch 3/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, initialize data loader]
+Epoch 3/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: loading]    
+Epoch 3/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: transfer to cpu]
+Epoch 3/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: forward / loss] 
+Epoch 3/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: backward]      
+Epoch 3/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: optimizer step]
+Epoch 3/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: collect metrics]
+Epoch 3/3 Train:   0%|          | 0/5 [00:00<?, ?batch/s, batch 1/5: completed, loss=0.5253, acc=1.0000]
+Epoch 3/3 Train:  20%|██        | 1/5 [00:00<00:00, 333.38batch/s, batch 2/5: loading]                  
+Epoch 3/3 Train:  20%|██        | 1/5 [00:00<00:00, 333.38batch/s, batch 2/5: transfer to cpu]
+Epoch 3/3 Train:  20%|██        | 1/5 [00:00<00:00, 333.38batch/s, batch 2/5: forward / loss] 
+Epoch 3/3 Train:  20%|██        | 1/5 [00:00<00:00, 250.00batch/s, batch 2/5: backward]      
+Epoch 3/3 Train:  20%|██        | 1/5 [00:00<00:00, 200.02batch/s, batch 2/5: optimizer step]
+Epoch 3/3 Train:  20%|██        | 1/5 [00:00<00:00, 200.02batch/s, batch 2/5: collect metrics]
+Epoch 3/3 Train:  20%|██        | 1/5 [00:00<00:00, 200.02batch/s, batch 2/5: completed, loss=0.5533, acc=1.0000]
+Epoch 3/3 Train:  40%|████      | 2/5 [00:00<00:00, 400.05batch/s, batch 3/5: loading]                           
+Epoch 3/3 Train:  40%|████      | 2/5 [00:00<00:00, 400.05batch/s, batch 3/5: transfer to cpu]
+Epoch 3/3 Train:  40%|████      | 2/5 [00:00<00:00, 400.05batch/s, batch 3/5: forward / loss] 
+Epoch 3/3 Train:  40%|████      | 2/5 [00:00<00:00, 333.36batch/s, batch 3/5: backward]      
+Epoch 3/3 Train:  40%|████      | 2/5 [00:00<00:00, 285.73batch/s, batch 3/5: optimizer step]
+Epoch 3/3 Train:  40%|████      | 2/5 [00:00<00:00, 285.73batch/s, batch 3/5: collect metrics]
+Epoch 3/3 Train:  40%|████      | 2/5 [00:00<00:00, 285.73batch/s, batch 3/5: completed, loss=0.6232, acc=0.8333]
+Epoch 3/3 Train:  60%|██████    | 3/5 [00:00<00:00, 428.60batch/s, batch 4/5: loading]                           
+Epoch 3/3 Train:  60%|██████    | 3/5 [00:00<00:00, 428.60batch/s, batch 4/5: transfer to cpu]
+Epoch 3/3 Train:  60%|██████    | 3/5 [00:00<00:00, 428.60batch/s, batch 4/5: forward / loss] 
+Epoch 3/3 Train:  60%|██████    | 3/5 [00:00<00:00, 375.03batch/s, batch 4/5: backward]      
+Epoch 3/3 Train:  60%|██████    | 3/5 [00:00<00:00, 375.03batch/s, batch 4/5: optimizer step]
+Epoch 3/3 Train:  60%|██████    | 3/5 [00:00<00:00, 333.36batch/s, batch 4/5: collect metrics]
+Epoch 3/3 Train:  60%|██████    | 3/5 [00:00<00:00, 333.36batch/s, batch 4/5: completed, loss=0.6915, acc=0.7500]
+Epoch 3/3 Train:  80%|████████  | 4/5 [00:00<00:00, 444.48batch/s, batch 5/5: loading]                           
+Epoch 3/3 Train:  80%|████████  | 4/5 [00:00<00:00, 444.48batch/s, batch 5/5: transfer to cpu]
+Epoch 3/3 Train:  80%|████████  | 4/5 [00:00<00:00, 444.48batch/s, batch 5/5: forward / loss] 
+Epoch 3/3 Train:  80%|████████  | 4/5 [00:00<00:00, 374.05batch/s, batch 5/5: backward]      
+Epoch 3/3 Train:  80%|████████  | 4/5 [00:00<00:00, 357.24batch/s, batch 5/5: optimizer step]
+Epoch 3/3 Train:  80%|████████  | 4/5 [00:00<00:00, 357.24batch/s, batch 5/5: collect metrics]
+Epoch 3/3 Train:  80%|████████  | 4/5 [00:00<00:00, 327.88batch/s, batch 5/5: completed, loss=0.6858, acc=0.7500]
+Epoch 3/3 Train: 100%|██████████| 5/5 [00:00<00:00, 409.85batch/s, done, loss=0.6858, acc=0.7500]                
+Epoch 3/3 Train: 100%|██████████| 5/5 [00:00<00:00, 409.85batch/s, done, loss=0.6858, acc=0.7500]
+Epoch 03 | loss=0.6858 | train_acc=0.7500 | train_macro_f1=0.7333 | validation=disabled | lr=1.00e-03 | 0.0s
+
+Collect final evaluation predictions:   0%|          | 0/20 [00:00<?, ?seq/s]
+Collect final evaluation predictions: 100%|██████████| 20/20 [00:00<00:00, 5440.79seq/s]
+Final epoch: 3
+train macro-F1: 0.523810
+
+Save training curves: working [00:00]
+Save training curves: working [00:00, done]
+Validation disabled: saved training curves; skipped validation analysis figures and t-SNE.
+Saved training outputs to: F:\competition\outputs\pytest_epoch_progress_20261014_1\test_train_only_skips_validati0\train_only

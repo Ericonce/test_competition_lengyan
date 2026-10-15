@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 
 from tqdm import tqdm
 
@@ -16,6 +17,7 @@ class Progress:
         self._stop = threading.Event()
         self._thread = None
         self.bar = None
+        self._last_stage_refresh = 0.0
 
     def __enter__(self):
         self.bar = tqdm(total=self.total, desc=self.description, unit=self.unit,
@@ -37,7 +39,13 @@ class Progress:
         self.bar.update(count)
 
     def stage(self, description):
+        # Keep the current stage available to the heartbeat without rendering
+        # hundreds of terminal lines per second for short accelerator batches.
         self.bar.set_postfix_str(description, refresh=False)
+        now = time.monotonic()
+        if now - self._last_stage_refresh >= 0.1:
+            self.bar.refresh()
+            self._last_stage_refresh = now
 
     def __exit__(self, error_type, error, traceback):
         self._stop.set()

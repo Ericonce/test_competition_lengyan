@@ -1,0 +1,69 @@
+augment:
+  enabled: false
+  preset: configs/augment/default.yaml
+data: datasets/synthetic_radar_overlap/data.yaml
+dataset:
+  sample_ratio: 0.01
+  seed: 2026
+  stratified: true
+  train_ratio: 0.8
+  val_ratio: 0.2
+inference:
+  batch_size: 256
+  checkpoint: null
+  labels_file: null
+  num_classes: null
+  progress: true
+  save_dir: null
+length_policy:
+  long: head
+  short: zero
+loss:
+  adversarial:
+    weight: 0.0
+  ce:
+    class_weights: null
+    label_smoothing: 0.0
+    prior_alpha: 0.0
+    weight: 1.0
+  objective: multigrain
+  pulse_infonce:
+    pulses_per_sequence: 8
+    temperature: 0.2
+    weight: 0.0
+  stream_infonce:
+    temperature: 0.2
+    weight: 0.0
+model: configs/model/mptsnet1d.yaml
+name: mptsnet1d_synthetic
+output_dir: results/mptsnet1d_synthetic
+sequence_length: 256
+task: classify
+train:
+  batch_size: 64
+  device: auto
+  early_stopping_patience: 6
+  epochs: 19
+  lr: 0.001
+  metrics_prior_alpha: 0.0
+  num_classes: null
+  num_workers: 0
+  optimizer: adamw
+  reporting:
+    dpi: 300
+    formats:
+    - png
+    - svg
+    - pdf
+    tsne:
+      max_iter: 1000
+      max_samples: 3000
+      perplexity: 30.0
+      seed: 2026
+  resume: false
+  resume_checkpoint: null
+  sampler: class_balanced
+  seed: 2026
+  use_amp: true
+  visualize: true
+  weight_decay: 0.0001

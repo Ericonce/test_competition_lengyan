@@ -36,6 +36,8 @@ train:
   weight_decay: 0.0001
   early_stopping_patience: 6
   use_amp: true
+  amp_dtype: float16  # 此服务器实测 FP16 训练比 BF16 更快。
+  progress_metric_interval: 10  # 每 10 个 batch 刷新 loss/acc，进度仍逐 batch 更新。
   two_views: false
   metrics_prior_alpha: 0.0
   resume: false
@@ -62,3 +64,5 @@ inference:
   save_dir: null
   batch_size: 256
   progress: true
+  use_amp: true  # 启用 NPU 融合注意力，预测概率仍用 FP32 计算。
+  amp_dtype: float16

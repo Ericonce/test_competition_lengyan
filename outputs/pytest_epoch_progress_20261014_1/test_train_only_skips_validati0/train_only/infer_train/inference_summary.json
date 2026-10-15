@@ -1,0 +1,13 @@
+{
+  "num_sequences": 20,
+  "num_classes": 2,
+  "evaluated": true,
+  "predictions_csv": "F:\\competition\\outputs\\pytest_epoch_progress_20261014_1\\test_train_only_skips_validati0\\train_only\\infer_train\\predictions.csv",
+  "accuracy": 0.6,
+  "balanced_accuracy": 0.6,
+  "macro_precision": 0.7777777777777778,
+  "macro_recall": 0.6,
+  "macro_f1": 0.5238095238095238,
+  "weighted_f1": 0.5238095238095238,
+  "all_class_macro_f1": 0.5238095238095238
+}

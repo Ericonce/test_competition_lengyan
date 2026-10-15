@@ -1,0 +1,214 @@
+{
+  "settings": {
+    "sample_ratio": 1.0,
+    "train_ratio": 1.0,
+    "val_ratio": 0.0,
+    "seed": 2026,
+    "stratified": true
+  },
+  "total_count": 24,
+  "sampled_count": 24,
+  "train_count": 24,
+  "val_count": 0,
+  "source_fingerprint": "31fac3a035ab7041e824b2fb9516c866275a236511c876deeef89d8abf3f074d",
+  "index_source": "generator counts",
+  "algorithm_version": 2,
+  "data_root": "F:\\competition\\outputs\\pytest_epoch_progress_20261014_1\\test_disable_visualization_ski1\\dataset",
+  "sampled": [
+    {
+      "path": "0/0.csv",
+      "label": 0
+    },
+    {
+      "path": "0/4.csv",
+      "label": 0
+    },
+    {
+      "path": "0/3.csv",
+      "label": 0
+    },
+    {
+      "path": "0/7.csv",
+      "label": 0
+    },
+    {
+      "path": "0/1.csv",
+      "label": 0
+    },
+    {
+      "path": "0/5.csv",
+      "label": 0
+    },
+    {
+      "path": "0/2.csv",
+      "label": 0
+    },
+    {
+      "path": "0/6.csv",
+      "label": 0
+    },
+    {
+      "path": "1/4.csv",
+      "label": 1
+    },
+    {
+      "path": "1/7.csv",
+      "label": 1
+    },
+    {
+      "path": "1/1.csv",
+      "label": 1
+    },
+    {
+      "path": "1/2.csv",
+      "label": 1
+    },
+    {
+      "path": "1/0.csv",
+      "label": 1
+    },
+    {
+      "path": "1/5.csv",
+      "label": 1
+    },
+    {
+      "path": "1/6.csv",
+      "label": 1
+    },
+    {
+      "path": "1/3.csv",
+      "label": 1
+    },
+    {
+      "path": "2/1.csv",
+      "label": 2
+    },
+    {
+      "path": "2/4.csv",
+      "label": 2
+    },
+    {
+      "path": "2/0.csv",
+      "label": 2
+    },
+    {
+      "path": "2/5.csv",
+      "label": 2
+    },
+    {
+      "path": "2/2.csv",
+      "label": 2
+    },
+    {
+      "path": "2/3.csv",
+      "label": 2
+    },
+    {
+      "path": "2/6.csv",
+      "label": 2
+    },
+    {
+      "path": "2/7.csv",
+      "label": 2
+    }
+  ],
+  "train": [
+    {
+      "path": "0/6.csv",
+      "label": 0
+    },
+    {
+      "path": "0/3.csv",
+      "label": 0
+    },
+    {
+      "path": "0/2.csv",
+      "label": 0
+    },
+    {
+      "path": "0/5.csv",
+      "label": 0
+    },
+    {
+      "path": "0/0.csv",
+      "label": 0
+    },
+    {
+      "path": "0/1.csv",
+      "label": 0
+    },
+    {
+      "path": "0/7.csv",
+      "label": 0
+    },
+    {
+      "path": "0/4.csv",
+      "label": 0
+    },
+    {
+      "path": "1/5.csv",
+      "label": 1
+    },
+    {
+      "path": "1/0.csv",
+      "label": 1
+    },
+    {
+      "path": "1/2.csv",
+      "label": 1
+    },
+    {
+      "path": "1/1.csv",
+      "label": 1
+    },
+    {
+      "path": "1/3.csv",
+      "label": 1
+    },
+    {
+      "path": "1/4.csv",
+      "label": 1
+    },
+    {
+      "path": "1/6.csv",
+      "label": 1
+    },
+    {
+      "path": "1/7.csv",
+      "label": 1
+    },
+    {
+      "path": "2/4.csv",
+      "label": 2
+    },
+    {
+      "path": "2/2.csv",
+      "label": 2
+    },
+    {
+      "path": "2/5.csv",
+      "label": 2
+    },
+    {
+      "path": "2/6.csv",
+      "label": 2
+    },
+    {
+      "path": "2/0.csv",
+      "label": 2
+    },
+    {
+      "path": "2/7.csv",
+      "label": 2
+    },
+    {
+      "path": "2/1.csv",
+      "label": 2
+    },
+    {
+      "path": "2/3.csv",
+      "label": 2
+    }
+  ],
+  "val": []
+}

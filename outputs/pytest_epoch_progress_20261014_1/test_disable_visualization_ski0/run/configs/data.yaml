@@ -1,0 +1,19 @@
+root: F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\dataset
+all: .
+num_classes: 3
+features:
+- CF_MHz
+- PW_us
+- PRI_us
+sequence_length: 32
+length_policy:
+  short: zero
+  long: head
+cache: false
+progress: false
+selection:
+  sample_ratio: 1.0
+  train_ratio: 0.75
+  val_ratio: 0.25
+  seed: 2026
+  stratified: true

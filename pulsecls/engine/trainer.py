@@ -30,6 +30,7 @@ from pulsecls.losses.classification import build_classification_loss
 from pulsecls.losses.multigrain import MultiGranularityObjective
 from pulsecls.nn.tasks import build_model
 from pulsecls.utils.device import (
+    amp_dtype_for,
     autocast_context,
     build_grad_scaler,
     device_name,
@@ -81,6 +82,7 @@ class BaseTrainer:
         self.output_dir = Path(pipeline["output_dir"])
         self.num_classes = int(self.data_cfg["num_classes"])
         self.device = get_device(self.train_cfg.get("device"))
+        self.amp_dtype = amp_dtype_for(self.device, self.train_cfg.get("amp_dtype", "float16"))
         self.normalization_mean = torch.zeros(1, len(self.data_cfg.get("features", ["CF_MHz", "PW_us", "PRI_us"])), 1, device=self.device)
         self.normalization_std = torch.ones_like(self.normalization_mean)
 
@@ -187,7 +189,7 @@ class BaseTrainer:
         criterion: nn.Module,
         augment: PulseAugment,
         training: bool,
-    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         stream_weight = float(
             self.loss_cfg.get("stream_infonce", {}).get("weight", 0.0)
         )
@@ -222,7 +224,7 @@ class BaseTrainer:
             return (
                 breakdown.total,
                 breakdown.logits,
-                breakdown.as_scalars(),
+                breakdown.as_tensors(),
             )
 
         mix = None
@@ -245,7 +247,7 @@ class BaseTrainer:
             return (
                 breakdown.total,
                 breakdown.logits,
-                breakdown.as_scalars(),
+                breakdown.as_tensors(),
             )
 
         logits = outputs["logits"]
@@ -253,12 +255,13 @@ class BaseTrainer:
         if mix is not None:
             partner_loss = criterion(logits, labels[mix.partner_index])
             ce_loss = mix.lam * ce_loss + (1.0 - mix.lam) * partner_loss
+        zero = ce_loss.detach().new_zeros(())
         parts = {
-            "ce_loss": float(ce_loss.detach().cpu()),
-            "stream_infonce_loss": 0.0,
-            "pulse_infonce_loss": 0.0,
-            "adversarial_loss": 0.0,
-            "total_loss": float(ce_loss.detach().cpu()),
+            "ce_loss": ce_loss.detach(),
+            "stream_infonce_loss": zero,
+            "pulse_infonce_loss": zero,
+            "adversarial_loss": zero,
+            "total_loss": ce_loss.detach(),
         }
         return ce_loss, logits, parts
 
@@ -272,59 +275,85 @@ class BaseTrainer:
         augment: PulseAugment,
         log_priors: torch.Tensor | None = None,
         metric_prior_alpha: float = 0.0,
+        progress_description: str | None = None,
     ) -> tuple[dict[str, float], np.ndarray, np.ndarray]:
         training = optimizer is not None
         model.train(training)
         use_amp = use_amp_for(self.device, self.train_cfg.get("use_amp", True))
-        totals = {
-            "ce_loss": 0.0,
-            "stream_infonce_loss": 0.0,
-            "pulse_infonce_loss": 0.0,
-            "adversarial_loss": 0.0,
-            "total_loss": 0.0,
-        }
+        loss_keys = ("ce_loss", "stream_infonce_loss", "pulse_infonce_loss", "adversarial_loss", "total_loss")
         n_items = 0
         all_labels: list[np.ndarray] = []
-        all_preds: list[np.ndarray] = []
+        all_preds: list[torch.Tensor] = []
 
-        for features, labels, _ in loader:
-            features = features.to(self.device, non_blocking=True)
-            labels = labels.to(self.device, non_blocking=True)
-            if training:
-                optimizer.zero_grad(set_to_none=True)
-            with torch.set_grad_enabled(training):
-                with autocast_context(self.device, use_amp):
-                    loss, logits, parts = self._loss_batch(
-                        model,
-                        features,
-                        labels,
-                        criterion,
-                        augment,
-                        training,
-                    )
+        totals = torch.zeros(len(loss_keys), device=self.device)
+        metric_interval = int(self.train_cfg.get("progress_metric_interval", 10))
+        if metric_interval < 1:
+            raise ValueError("progress_metric_interval must be positive")
+
+        n_correct = torch.zeros((), device=self.device)
+        description = progress_description or ("Train" if training else "Validation")
+        batch_count = len(loader)
+        with Progress(description, batch_count, unit="batch",
+                      enabled=self.data_cfg.get("progress", True)) as progress:
+            progress.stage("initialize data loader")
+            iterator = iter(loader)
+            for batch_number in range(1, batch_count + 1):
+                batch = f"batch {batch_number}/{batch_count}"
+                progress.stage(f"{batch}: loading")
+                features, labels, _ = next(iterator)
+                all_labels.append(labels.numpy())
+                progress.stage(f"{batch}: transfer to {self.device}")
+                features = features.to(self.device, non_blocking=True)
+                labels = labels.to(self.device, non_blocking=True)
                 if training:
-                    if use_amp:
-                        scaler.scale(loss).backward()
-                        scaler.step(optimizer)
-                        scaler.update()
-                    else:
-                        loss.backward()
-                        optimizer.step()
-            batch_size = labels.size(0)
-            n_items += batch_size
-            for key, value in parts.items():
-                totals[key] += value * batch_size
-            all_labels.append(labels.detach().cpu().numpy())
-            metric_logits = logits
-            if metric_prior_alpha != 0.0 and log_priors is not None:
-                metric_logits = logits - metric_prior_alpha * log_priors.to(
-                    device=logits.device,
-                    dtype=logits.dtype,
-                )
-            all_preds.append(metric_logits.argmax(dim=1).detach().cpu().numpy())
+                    optimizer.zero_grad(set_to_none=True)
+                with torch.set_grad_enabled(training):
+                    progress.stage(f"{batch}: forward / loss")
+                    with autocast_context(self.device, use_amp, self.amp_dtype):
+                        loss, logits, parts = self._loss_batch(
+                            model,
+                            features,
+                            labels,
+                            criterion,
+                            augment,
+                            training,
+                        )
+                    if training:
+                        progress.stage(f"{batch}: backward")
+                        if use_amp:
+                            scaler.scale(loss).backward()
+                            progress.stage(f"{batch}: optimizer step")
+                            scaler.step(optimizer)
+                            scaler.update()
+                        else:
+                            loss.backward()
+                            progress.stage(f"{batch}: optimizer step")
+                            optimizer.step()
+                progress.stage(f"{batch}: collect metrics")
+                batch_size = labels.size(0)
+                n_items += batch_size
+                totals += torch.stack([parts[key].float() for key in loss_keys]) * batch_size
+                metric_logits = logits
+                if metric_prior_alpha != 0.0 and log_priors is not None:
+                    metric_logits = logits - metric_prior_alpha * log_priors.to(
+                        device=logits.device,
+                        dtype=logits.dtype,
+                    )
+                prediction = metric_logits.detach().argmax(dim=1)
+                all_preds.append(prediction)
+                n_correct += (prediction == labels).sum()
+                if batch_number % metric_interval == 0 or batch_number == batch_count:
+                    loss_value, accuracy = (torch.stack((totals[-1], n_correct)) / n_items).cpu().tolist()
+                    progress.stage(f"{batch}: completed, loss={loss_value:.4f}, acc={accuracy:.4f}")
+                else:
+                    progress.stage(f"{batch}: completed")
+                progress.update()
+            values = (totals / max(n_items, 1)).cpu().tolist()
+            averaged = dict(zip(loss_keys, values))
+            predictions = torch.cat(all_preds).cpu().numpy()
+            progress.stage(f"done, loss={averaged['total_loss']:.4f}")
 
-        averaged = {key: value / max(n_items, 1) for key, value in totals.items()}
-        return averaged, np.concatenate(all_labels), np.concatenate(all_preds)
+        return averaged, np.concatenate(all_labels), predictions
 
     def _collect_predictions(self, model, loader, indices, log_priors, metric_prior_alpha):
         """Sequential, unaugmented evaluation; retain features only for selected t-SNE samples."""
@@ -334,7 +363,7 @@ class BaseTrainer:
         with Progress("Collect final evaluation predictions", len(loader.dataset),
                       enabled=self.data_cfg.get("progress", True)) as progress, torch.no_grad():
             for features, labels, sample_indices in loader:
-                with autocast_context(self.device, use_amp_for(self.device, self.train_cfg.get("use_amp", True))):
+                with autocast_context(self.device, use_amp_for(self.device, self.train_cfg.get("use_amp", True)), self.amp_dtype):
                     outputs = model(self._normalize_features(features.to(self.device, non_blocking=True)))
                 logits = outputs["logits"].float()
                 if metric_prior_alpha != 0:
@@ -439,6 +468,7 @@ class BaseTrainer:
         scaler = build_grad_scaler(
             self.device,
             bool(self.train_cfg.get("use_amp", True)),
+            self.amp_dtype,
         )
         augment = PulseAugment(**self.pipeline.get("augment", {}))
 
@@ -486,6 +516,7 @@ class BaseTrainer:
 
         runtime = {"device": str(self.device), "accelerator": name, "validation_enabled": has_val,
                    "use_amp": use_amp_for(self.device, self.train_cfg.get("use_amp", True)),
+                   "amp_dtype": str(self.amp_dtype),
                    "initial_epoch": start_epoch, "additional_epochs": additional_epochs,
                    "optimizer": type(optimizer).__name__,
                    "optimizer_initial_lr": [group["lr"] for group in optimizer.param_groups],
@@ -504,6 +535,7 @@ class BaseTrainer:
                 augment,
                 log_priors=log_priors,
                 metric_prior_alpha=metric_prior_alpha,
+                progress_description=f"Epoch {epoch}/{start_epoch + additional_epochs} Train",
             )
             train_metrics = compute_metrics(train_y, train_pred, self.num_classes, active_labels)
             val_losses, val_metrics = {}, {}
@@ -511,6 +543,7 @@ class BaseTrainer:
                 val_losses, val_y, val_pred = self._run_epoch(
                     model, val_loader, criterion, None, scaler, augment,
                     log_priors=log_priors, metric_prior_alpha=metric_prior_alpha,
+                    progress_description=f"Epoch {epoch}/{start_epoch + additional_epochs} Validation",
                 )
                 val_metrics = compute_metrics(val_y, val_pred, self.num_classes, active_labels)
                 scheduler.step(val_metrics["macro_f1"])

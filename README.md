@@ -24,7 +24,11 @@ python .\infer\resnet_softmax_synthetic\infer.py
 
 19 种独立方法都有 `configs/pipeline/<方法>_synthetic.yaml`、`train/<方法>_synthetic/train.py` 和 `infer/<方法>_synthetic/infer.py`，另有 CNN synthetic baseline 配置。新增 ResNet1D-34/50、TCN、InceptionTime、LSTM/BiLSTM、Transformer Encoder、Informer Encoder 与 MLP；模型架构参考及分类适配见[经典序列模型说明](docs/CLASSIC_SEQUENCE_MODELS.md)。各方法保留自己的网络和损失定义，默认使用同一合成总池、采样与划分设置。
 
-训练和推理入口的路径直接写在 model.train()/model.infer() 调用中，并列出类别数、批量大小、长度策略、增强 YAML 等常用设置；训练还列出轮数、学习率、采样/划分和续训，推理显式列出权重路径。代码参数优先于 YAML；删除对应参数可恢复继承 YAML。设备默认优先 CUDA，再 NPU，最后 CPU。数据加载、推理与缓存操作自动显示终端进度。
+训练和推理入口的路径直接写在 model.train()/model.infer() 调用中，并列出类别数、批量大小、长度策略、增强 YAML 等常用设置；训练还列出轮数、学习率、采样/划分和续训，推理显式列出权重路径。代码参数优先于 YAML；删除对应参数可恢复继承 YAML。设备默认优先 CUDA，再 NPU，最后 CPU。每个训练 epoch 和验证阶段显示 batch 进度、平均 loss、准确率与当前计算阶段；所有推理入口显示序列进度和当前 batch。进度条耗时每秒刷新。
+
+Transformer 在昇腾上默认避开不支持的 PyTorch 融合编码器算子，使用原有权重执行 NPU 注意力；TCN 保留实测更快的原生卷积。训练 `amp_dtype`、推理 AMP 和进度指标刷新间隔见[训练配置说明](docs/TRAIN_CONFIGURATION.md)。昇腾性能对照可运行 `tools/benchmark_npu_sequences.py`；实际数据短训与 CSV 推理检查使用 `tools/validate_npu_training.py`，均通过 `--output` 指定独立结果目录。
+
+Ascend910B3 上的修改前后耗时、完整训练与推理检查及结果位置见[昇腾性能实测记录](docs/ASCEND_PERFORMANCE_20261015.md)。完整链路检查脚本的断言对应本次服务器上的 100 类、8,000 条数据；日常训练仍使用各模型的 train.py。
 
 推理范例 `infer/infer_cnn_softmax_synthetic.py` 可设置输入文件夹、权重、输出目录与可选标签 TXT。结果为 predictions.csv，指定标签后计算 Macro F1 等指标。多模型投票使用 `infer/infer_vote.py` 和 `configs/inference/vote.yaml`；关闭的成员需训练并填写权重后再开启。
 

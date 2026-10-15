@@ -1,0 +1,7 @@
+﻿sample_index,filename,path,label,prediction,confidence,correct
+0,7.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\dataset\0\7.csv,0,0,0.42305198,True
+1,4.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\dataset\0\4.csv,0,0,0.4230784,True
+2,6.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\dataset\1\6.csv,1,0,0.44039723,False
+3,7.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\dataset\1\7.csv,1,0,0.44145676,False
+4,1.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\dataset\2\1.csv,2,0,0.4291914,False
+5,3.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\dataset\2\3.csv,2,0,0.4271213,False

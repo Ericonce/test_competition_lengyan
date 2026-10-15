@@ -1,0 +1,9 @@
+{
+  "num_emitters": 3,
+  "num_sequences": 24,
+  "length_min": 32,
+  "length_max": 32,
+  "snr_min_db": null,
+  "snr_max_db": null,
+  "partitioning": "configured_in_pipeline"
+}

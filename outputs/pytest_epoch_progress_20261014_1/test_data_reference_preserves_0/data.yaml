@@ -1,0 +1,9 @@
+all: .
+cache: true
+features:
+- CF_MHz
+- PW_us
+- PRI_us
+num_classes: 3
+root: .
+root_relative_to_yaml: true

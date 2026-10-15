@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+import torch
 
 from pulsecls.utils import device as devices
 
@@ -46,3 +47,21 @@ def test_explicit_cuda_does_not_fall_back_to_npu():
          patch.object(devices, "npu_available", return_value=True):
         with pytest.raises(RuntimeError, match="CUDA requested"):
             devices.parse_device_spec("cuda:0")
+
+
+@pytest.mark.parametrize("supported,expected", [(True, torch.bfloat16), (False, torch.float16)])
+def test_auto_amp_uses_bf16_only_on_supported_npu(monkeypatch, supported, expected):
+    monkeypatch.setattr(torch, "npu", SimpleNamespace(is_bf16_supported=lambda: supported), raising=False)
+    assert devices.amp_dtype_for(SimpleNamespace(type="npu"), "auto") == expected
+    assert devices.amp_dtype_for(torch.device("cuda"), "auto") == torch.float16
+
+
+def test_bf16_disables_gradient_scaling():
+    with patch.object(torch.amp, "GradScaler") as scaler:
+        devices.build_grad_scaler(torch.device("cuda"), True, "bfloat16")
+        scaler.assert_called_once_with("cuda", enabled=False)
+
+
+def test_invalid_amp_dtype_fails_clearly():
+    with pytest.raises(ValueError, match="amp_dtype"):
+        devices.amp_dtype_for(torch.device("cpu"), "float64")

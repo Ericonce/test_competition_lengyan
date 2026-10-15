@@ -33,6 +33,16 @@ return model.train(
 
 完整入口还列出优化器、权重衰减、早停、AMP、工作进程数、种子、缓存和数据加载进度。续训时设置 resume=True，填写断点路径；epochs 是本次额外训练轮数。全部数据训练可设置 sample_ratio=1.0、train_ratio=1.0、val_ratio=0.0。
 
+所有模型共用训练进度显示：每个 epoch 分别显示训练和验证的 batch 完成比例、耗时、预计剩余时间、累计平均 loss 与准确率，并显示当前处于加载数据、传输数据、前向计算、反向传播或更新权重哪个阶段。耗时每秒刷新，batch 完成后才增加进度；首个 batch 较慢时也能看到当前阶段。沿用 `data_cfg={"progress": True}` 开关，默认开启；设为 False 关闭训练和数据加载进度。
+
+`progress_metric_interval=10` 控制 loss/acc 刷新间隔；进度完成数仍逐 batch 更新，最后一个 batch 一定刷新指标。损失与预测先留在设备上汇总，避免每个 batch 多次把标量和标签复制到 CPU。设为 `1` 时每批刷新指标，但增加设备同步。
+
+训练可用 `use_amp=True, amp_dtype="float16"` 指定混合精度，也支持 `"bfloat16"` 和 `"auto"`。默认保持 FP16；BF16 不使用梯度缩放。推理需要在 `inference={"use_amp": True, "amp_dtype": "float16"}` 中单独设置；Transformer、TCN 的 pipeline 和推理入口已开启，其他模型默认保持原来的推理精度。混合精度可能造成少量数值差异。
+
+Transformer 在 NPU 上默认通过原有权重执行显式编码器，避开 `aten::_transformer_encoder_layer_fwd` 的 CPU 回退；半精度优先使用 `torch_npu.npu_fusion_attention`，关闭 AMP 时使用 NPU 矩阵注意力。模型 YAML 的 `npu_attention_backend` 支持 `auto`（默认）、`fusion`、`math`；`native` 仅用于原实现性能对照，在旧版 torch_npu 上可能回退 CPU。CUDA/CPU 沿用 PyTorch 编码器，权重键名和形状保持兼容。
+
+TCN 默认 `npu_conv_backend: native`，Ascend910B3 上原生卷积实测比 `phase`、`linear` 两种等价替代实现更快。更换环境时可用 `tools/benchmark_npu_sequences.py` 测试，不能仅根据算子名称推断速度。
+
 所有训练入口都提供 `labelsmooth=0.0`，用于分类交叉熵的标签平滑：`0` 关闭，`0.1` 表示平滑强度为 0.1，有效范围为 `[0, 1]`。也可修改 pipeline 的 `loss.ce.label_smoothing`；显式 `labelsmooth` 优先于 YAML 和 `loss` 字典或点分路径。删除该参数或设为 `None` 时继承配置。此参数适用于所有模型的分类损失，不改变对比损失或评估标签。命令行训练也支持 `--labelsmooth 0.1`。
 
 早停支持 `patience=10` 简写，与 `early_stopping_patience=10` 等价：连续 10 轮验证 Macro-F1 未改善时停止。也支持 `train={"patience": 10}`、`**{"train.patience": 10}` 和 YAML 的 `train.patience`。建议只写其中一种；同一配置层两种名称都填写时，非 None 的 patience 优先。跨层仍遵循代码优先于 YAML、直接训练参数优先于 train 字典的规则。patience=None 不覆盖已有设置；无验证集时不启用基于验证的早停。
@@ -56,6 +66,8 @@ return model.infer(
 ```
 
 推理直接读取平铺 CSV 文件夹，不使用测试 data.yaml。save_dir 是 CSV 输出目录；checkpoint 是显式权重路径，无验证集训练后用 final_model.pt。推理不执行随机增强，增强 YAML 引用只用于配置。
+
+文件夹推理、划分数据推理和多模型投票均显示实时进度，包含已完成序列数、当前 batch、耗时、预计剩余时间，以及读取、设备传输、预测或收集结果的阶段。使用 `inference={"progress": True}` 控制普通推理，投票入口使用 `progress=True`；默认均开启。耗时刷新表示进度显示仍在运行，完成数才表示实际完成的工作量。
 
 infer/infer_vote.py 同样直接填写各模型的 pipeline、checkpoint 与 enabled，并列出统一的 num_classes、batch_size、长度和进度参数，无需命令行参数。更换投票 YAML 时直接修改 config 路径；显式参数仍优先于 YAML。通用 infer/infer.py 保留 CLI；--pipeline 指定其他模型时，未提供的选项继承其 YAML。
 

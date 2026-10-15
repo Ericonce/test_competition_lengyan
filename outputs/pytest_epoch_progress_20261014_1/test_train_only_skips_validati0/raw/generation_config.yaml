@@ -1,0 +1,107 @@
+output_dir: outputs/pytest_epoch_progress_20261014_1/test_train_only_skips_validati0/raw
+seed: 2026
+num_emitters: 2
+sequences_per_emitter: 20
+test_num_sequences: 10000
+test_output_dir: datasets/synthetic_radar_test
+num_transmitter_types: 6
+overlap:
+  enabled: false
+  emitters_per_group: 5
+  base_jitter_ratio:
+  - 0.1
+  - 0.1
+  - 0.1
+  modulation_jitter_ratio: 0.05
+observation:
+  enabled: false
+  session_bias_std_ratio:
+  - 0.025
+  - 0.04
+  - 0.03
+  session_bias_max_ratio: 0.15
+  missing_pulse_rate_range:
+  - 0.05
+  - 0.2
+sequence:
+  length: 16
+  random_length: false
+  length_range:
+  - 128
+  - 512
+  start_index_range:
+  - 0
+  - 10000
+  parameter_drift_ratio: 0.005
+transmitter:
+  pri_modes:
+  - fixed
+  - staggered
+  - jittered
+  - sinusoidal
+  - sliding
+  cf_modes:
+  - linear_fm
+  - nonlinear_fm
+  - frequency_coded
+  - phase_coded
+  pw_modes:
+  - fixed
+  - multilevel
+  - sinusoidal
+  templates: null
+parameters:
+  cf_mhz:
+  - 1000.0
+  - 12000.0
+  pw_us:
+  - 5.0
+  - 50.0
+  pri_us:
+  - 200.0
+  - 1600.0
+  pri_depth_ratio:
+  - 0.05
+  - 0.25
+  cf_depth_ratio:
+  - 0.002
+  - 0.02
+  pw_depth_ratio:
+  - 0.02
+  - 0.15
+  period_pulses:
+  - 12
+  - 64
+  stagger_levels:
+  - 3
+  - 6
+  frequency_levels:
+  - 3
+  - 8
+  code_length:
+  - 7
+  - 31
+  code_hold_pulses:
+  - 1
+  - 4
+  pw_levels:
+  - 2
+  - 4
+  max_duty_ratio: 0.5
+noise:
+  enabled: false
+  snr_db_range:
+  - 10.0
+  - 20.0
+  channel_scales:
+  - 10000.0
+  - 50.0
+  - 1000.0
+  power_allocation: per_channel
+  correlation_range:
+  - 0.4
+  - 0.85
+  invalid_policy: clip
+  min_value: 1.0e-06
+  max_attempts: 256
+save_clean: false

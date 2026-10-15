@@ -25,6 +25,12 @@ class LossBreakdown:
     pulse: torch.Tensor
     adversarial: torch.Tensor
 
+    def as_tensors(self) -> dict[str, torch.Tensor]:
+        """Detached metrics remain on the device until the trainer reports them."""
+        return {"ce_loss": self.ce.detach(), "stream_infonce_loss": self.stream.detach(),
+                "pulse_infonce_loss": self.pulse.detach(), "adversarial_loss": self.adversarial.detach(),
+                "total_loss": self.total.detach()}
+
     def as_scalars(self) -> dict[str, float]:
         return {
             "ce_loss": float(self.ce.detach().cpu()),

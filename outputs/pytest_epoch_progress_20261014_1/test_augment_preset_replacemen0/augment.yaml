@@ -1,0 +1,5 @@
+enabled: false
+methods:
+  jittering:
+    enabled: true
+    snr_db: 28

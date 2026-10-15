@@ -1,0 +1,12 @@
+# 三通道输入：载频 CF(MHz)、脉宽 PW(us)、脉冲重复周期 PRI(us)。
+# 固定输入长度与补齐/裁剪策略统一设置在 configs/pipeline/*.yaml。
+name: synthetic_radar
+root: .
+root_relative_to_yaml: true
+num_classes: 2
+features:
+- CF_MHz
+- PW_us
+- PRI_us
+cache: true
+all: .

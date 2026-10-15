@@ -84,20 +84,35 @@ def pin_memory_for(device: torch.device) -> bool:
     return device.type == "cuda"
 
 
-def autocast_context(device: torch.device, enabled: bool) -> AbstractContextManager[Any]:
+def amp_dtype_for(device: torch.device, requested: str | torch.dtype = "float16") -> torch.dtype:
+    """Resolve optional BF16 AMP without changing existing FP16 defaults."""
+    if isinstance(requested, torch.dtype):
+        return requested
+    name = str(requested).lower()
+    if name == "auto":
+        check = getattr(getattr(torch, "npu", None), "is_bf16_supported", None)
+        return torch.bfloat16 if device.type == "npu" and check is not None and check() else torch.float16
+    aliases = {"fp16": torch.float16, "float16": torch.float16,
+               "bf16": torch.bfloat16, "bfloat16": torch.bfloat16}
+    if name not in aliases:
+        raise ValueError("amp_dtype must be auto, float16/fp16 or bfloat16/bf16")
+    return aliases[name]
+
+
+def autocast_context(device: torch.device, enabled: bool, dtype: str | torch.dtype = "float16") -> AbstractContextManager[Any]:
     if not enabled:
         return nullcontext()
     if device.type == "npu" and hasattr(torch, "npu") and hasattr(torch.npu, "amp"):
-        return torch.npu.amp.autocast(enabled=True)
+        return torch.npu.amp.autocast(enabled=True, dtype=amp_dtype_for(device, dtype))
     return torch.autocast(
         device_type=device.type,
-        dtype=torch.float16,
+        dtype=amp_dtype_for(device, dtype),
         enabled=True,
     )
 
 
-def build_grad_scaler(device: torch.device, enabled: bool) -> Any:
-    enabled = use_amp_for(device, enabled)
+def build_grad_scaler(device: torch.device, enabled: bool, dtype: str | torch.dtype = "float16") -> Any:
+    enabled = use_amp_for(device, enabled) and amp_dtype_for(device, dtype) == torch.float16
     if device.type == "npu" and hasattr(torch, "npu") and hasattr(torch.npu, "amp"):
         return torch.npu.amp.GradScaler(enabled=enabled)
     amp_module = getattr(torch, "amp", None)

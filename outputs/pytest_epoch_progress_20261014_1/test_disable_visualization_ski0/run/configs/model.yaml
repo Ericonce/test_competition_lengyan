@@ -1,0 +1,8 @@
+type: cnn1d
+in_channels: 3
+hidden_channels:
+- 8
+- 16
+stream_embedding_dim: 8
+contrast_dim: 4
+dropout: 0.1

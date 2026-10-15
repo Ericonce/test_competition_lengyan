@@ -1,0 +1,91 @@
+Training started: 2026-10-14T23:33:39.133525+08:00
+Training classes: 3
+
+Effective data.yaml:
+root: F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\dataset
+all: .
+num_classes: 3
+features:
+- CF_MHz
+- PW_us
+- PRI_us
+sequence_length: 32
+length_policy:
+  short: zero
+  long: head
+cache: false
+progress: false
+selection:
+  sample_ratio: 1.0
+  train_ratio: 0.75
+  val_ratio: 0.25
+  seed: 2026
+  stratified: true
+
+
+Effective augment.yaml:
+enabled: false
+
+
+Effective model.yaml:
+type: cnn1d
+in_channels: 3
+hidden_channels:
+- 8
+- 16
+stream_embedding_dim: 8
+contrast_dim: 4
+dropout: 0.1
+
+
+Effective pipeline/train settings:
+task: classify
+output_dir: F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\run
+train:
+  device: cpu
+  seed: 2026
+  epochs: 1
+  resume: false
+  resume_checkpoint: null
+  batch_size: 4
+  num_workers: 0
+  sampler: random
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 20
+  use_amp: false
+  two_views: true
+  metrics_prior_alpha: 0.0
+  num_classes: null
+  reporting:
+    dpi: 300
+    formats:
+    - png
+    - svg
+    - pdf
+    tsne:
+      max_samples: 1
+      seed: 2026
+      perplexity: 30.0
+      max_iter: 1000
+  visualize: false
+  optimizer_foreach: false
+loss:
+  ce:
+    weight: 1.0
+inference:
+  num_classes: null
+
+Using device: cpu
+Data selection: total=24, sampled=24, train=18, val=6
+Loaded 18 samples from pipeline:train in 0.1s
+Loaded 6 samples from pipeline:val in 0.0s
+Train feature mean: [7838.6279296875, 35.48566818237305, 1042.4334716796875]
+Train feature std: [2830.02392578125, 11.864855766296387, 416.7078857421875]
+Effective runtime settings: {'device': 'cpu', 'accelerator': None, 'validation_enabled': True, 'use_amp': False, 'initial_epoch': 0, 'additional_epochs': 1, 'optimizer': 'AdamW', 'optimizer_initial_lr': [0.001], 'optimizer_weight_decay': [0.0001]}
+Epoch 01 | loss=1.2697 | val_acc=0.3333 | val_macro_f1=0.1667 | val_weighted_f1=0.1667 | lr=1.00e-03 | 0.0s
+Best epoch: 1
+val macro-F1: 0.166667
+Visualization disabled: saved metrics and checkpoints; skipped figures and t-SNE.
+Saved training outputs to: F:\competition\outputs\pytest_epoch_progress_20261014_1\test_disable_visualization_ski0\run

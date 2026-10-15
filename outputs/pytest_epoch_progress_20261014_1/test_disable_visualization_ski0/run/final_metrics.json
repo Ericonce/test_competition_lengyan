@@ -1,0 +1,12 @@
+{
+  "best_epoch": 1,
+  "validation_enabled": true,
+  "evaluation_split": "val",
+  "accuracy": 0.3333333333333333,
+  "balanced_accuracy": 0.3333333333333333,
+  "macro_precision": 0.1111111111111111,
+  "macro_recall": 0.3333333333333333,
+  "macro_f1": 0.16666666666666666,
+  "weighted_f1": 0.16666666666666666,
+  "all_class_macro_f1": 0.16666666666666666
+}

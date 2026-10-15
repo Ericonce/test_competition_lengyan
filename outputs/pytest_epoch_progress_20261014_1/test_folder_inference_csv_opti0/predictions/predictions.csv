@@ -1,0 +1,12 @@
+﻿filename,path,prediction,confidence
+0.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\0.csv,0,0.9646631
+1.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\1.csv,0,0.9646631
+2.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\2.csv,0,0.9646631
+3.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\3.csv,0,0.9646631
+4.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\4.csv,0,0.9646631
+5.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\5.csv,0,0.9646631
+6.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\6.csv,0,0.9646631
+7.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\7.csv,0,0.9646631
+8.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\8.csv,0,0.9646631
+9.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\9.csv,0,0.9646631
+10.csv,F:\competition\outputs\pytest_epoch_progress_20261014_1\test_folder_inference_csv_opti0\test_pool\10.csv,0,0.9646631

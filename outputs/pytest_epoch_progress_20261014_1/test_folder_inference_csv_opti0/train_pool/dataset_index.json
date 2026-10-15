@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "layout": "numbered_csv",
+  "generation_id": "5a73e7323fa145ddb1064df59e8599db",
+  "classes": [
+    {
+      "label": 0,
+      "count": 4
+    },
+    {
+      "label": 1,
+      "count": 4
+    },
+    {
+      "label": 2,
+      "count": 4
+    }
+  ]
+}

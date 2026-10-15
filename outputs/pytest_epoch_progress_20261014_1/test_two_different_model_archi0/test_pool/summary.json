@@ -1,0 +1,8 @@
+{
+  "num_emitters": 3,
+  "num_sequences": 11,
+  "length_min": 12,
+  "length_max": 25,
+  "partitioning": "independent_test",
+  "rng_domain": 5
+}

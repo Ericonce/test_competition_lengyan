@@ -4,3 +4,4 @@ type: tcn
 channels: [64, 64, 128, 128]
 kernel_size: 3
 dropout: 0.1
+npu_conv_backend: native  # Ascend910B3 实测原生卷积更快，保留原生实现。

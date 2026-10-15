@@ -48,7 +48,7 @@ DEFAULT_CFG = SimpleNamespace(**DEFAULT_CFG_DICT)
 TRAIN_DEFAULTS = {key: deepcopy(DEFAULT_CFG_DICT[key]) for key in (
     "device", "seed", "epochs", "resume", "resume_checkpoint", "batch_size",
     "num_workers", "sampler", "optimizer", "lr", "weight_decay",
-    "early_stopping_patience", "use_amp", "two_views", "metrics_prior_alpha", "num_classes", "reporting", "visualize",
+    "early_stopping_patience", "use_amp", "amp_dtype", "progress_metric_interval", "two_views", "metrics_prior_alpha", "num_classes", "reporting", "visualize",
 )}
 TRAIN_DEFAULTS["optimizer_foreach"] = False
 

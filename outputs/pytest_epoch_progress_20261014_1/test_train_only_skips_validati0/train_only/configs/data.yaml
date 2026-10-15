@@ -1,0 +1,20 @@
+name: synthetic_radar
+root: F:\competition\outputs\pytest_epoch_progress_20261014_1\test_train_only_skips_validati0\raw
+root_relative_to_yaml: true
+num_classes: 2
+features:
+- CF_MHz
+- PW_us
+- PRI_us
+cache: true
+all: .
+sequence_length: 16
+length_policy:
+  short: zero
+  long: head
+selection:
+  sample_ratio: 0.5
+  train_ratio: 1.0
+  val_ratio: 0.0
+  seed: 2026
+  stratified: true
