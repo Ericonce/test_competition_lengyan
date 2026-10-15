@@ -1,8 +1,8 @@
-# Synthetic 模型入口
+# 合成数据集的模型训练与推理入口
 
 所有方法输入均为 CF/PW/PRI，默认使用 datasets/synthetic_radar_overlap/data.yaml 中记录的合成总池。其他三通道数据可按 [新数据集接入指南](NEW_DATASET_GUIDE.md) 创建独立 pipeline 与入口，表中为现有 synthetic 默认配置。
 
-| 方法 | Pipeline | 训练 | 推理 |
+| 方法 | 流程配置 | 训练 | 推理 |
 | --- | --- | --- | --- |
 | cnn_softmax | [yaml](../configs/pipeline/cnn_softmax_synthetic.yaml) | [train.py](../train/cnn_softmax_synthetic/train.py) | [infer.py](../infer/cnn_softmax_synthetic/infer.py) |
 | resnet_softmax | [yaml](../configs/pipeline/resnet_softmax_synthetic.yaml) | [train.py](../train/resnet_softmax_synthetic/train.py) | [infer.py](../infer/resnet_softmax_synthetic/infer.py) |

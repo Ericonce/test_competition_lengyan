@@ -1,4 +1,4 @@
-# 通过 data.yaml 可视化数据集
+# 数据集可视化与分析（通过 data.yaml 指定数据）
 
 入口是 [tools/visualize_dataset.py](../tools/visualize_dataset.py)。分析训练/验证的总数据池，不需要 pipeline 或模型权重，也不执行训练。
 

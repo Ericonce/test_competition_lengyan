@@ -1,4 +1,4 @@
-# 可组合的三维 PDW 数据增强
+# 可串联的三通道脉冲描述字（PDW）数据增强
 
 本次按用户选择接入变换与样本融合方法，不包含需要额外训练的 GAN、VAE 等生成模型。
 
@@ -12,8 +12,37 @@
 - `std`、`ratio`、`keep_ratio` 等：各方法的可调强度/阈值。
 - `order`：明确指定顺序。关闭的方法跳过，开启但未列入 order 的方法会报错，避免静默遗漏。
 
-各方法是否开启以所选 YAML 的 methods.<名称>.enabled 为准；训练调用中的 augment.enabled 为 False 时，总开关优先关闭全部增强。要使用增强，先将调用总开关改为 True，再开启 YAML 中需要的方法。
+各方法是否开启以合并后的 methods.<名称>.enabled 为准：train.py 中显式填写的字段优先于 YAML，未填写的字段继续继承 YAML。训练调用中的 augment.enabled 为 False 时，即使代码或 YAML 中的方法开关为 True，也不会执行任何增强，包括 MixUp。
 默认参数是工程起点，不表示已在当前数据上找到最优强度。所有方法先作用于原始 CSV 的 CF（MHz）、PW（μs）、PRI（μs），增强串联完成后再使用训练集均值/标准差标准化；验证集和推理只标准化、不随机增强。
+
+## 在 train.py 中配置增强
+
+`train/` 下的全部训练入口只保留一个简洁的 jittering 配置范例，总开关默认 False。需要增强时将总开关改为 True，并直接在 methods 中修改或添加方法；代码中的同名字段优先于 YAML，未填写的字段继承 YAML。若希望 jittering 完全由 YAML 控制，删除或注释入口中的 jittering 配置即可。
+
+例如，将现有训练调用的 augment 参数改成下面的字典，即使两个方法都为 True，总开关 False 仍表示不执行增强：
+
+```python
+augment = {
+    "preset": PROJECT_ROOT / "configs/augment/default.yaml",
+    "enabled": False,
+    "methods": {
+        "jittering": {
+            "enabled": True,
+            "prob": 1.0,
+            "snr_db": 35.0,
+        },
+        "time_shift": {
+            "enabled": True,
+            "prob": 1.0,
+            "ratio": 0.1,
+        },
+    },
+}
+```
+
+这是传给 `model.train(..., augment=...)` 的字典示例；现有入口中直接写在调用里即可，不必定义额外变量。将总开关改成 True 后才执行合并配置中已开启的方法。可以通过代码把某个方法设为 False，关闭 YAML 中已开启的同名方法；只覆盖 snr_db 时，其余 enabled、prob 等字段仍继承 YAML。
+
+执行顺序默认继承增强 YAML 的 order。各入口也提供了注释的 order 范例，需要调整顺序时取消注释；该列表会整体覆盖 YAML 列表，须包含所有已开启的方法，包括只在 YAML 中开启的方法。同类融合放在 MixUp 前面；如需完全由 YAML 控制某个字段，删除或注释入口中的对应覆盖项。配置字段名称沿用 `enabled`。
 
 加性高斯噪声使用 `snr_db`（dB）控制：对每条序列、每个通道分别测量信号能量 `E_s`，抽取高斯噪声后缩放至 `E_n = E_s / 10^(snr_db/10)`。SNR 越低，加入的噪声越强；零能量通道不加噪。`white_noise_windows` 只在所选时间窗口计算能量；`random_noise_boxes` 只在所选 STFT 时频框计算能量；`spawner` 针对融合后的序列加噪。
 
@@ -113,7 +142,7 @@ MixUp 会混合类别损失，只用于普通监督分类；对比学习分支�
 
 实现参考：[原作者时序增强方法说明](https://github.com/uchidalab/time_series_augmentation/blob/master/docs/AugmentationMethods.md)、[引导扭曲论文](https://arxiv.org/abs/2004.08780)、[傅里叶替代数据论文](https://arxiv.org/abs/0812.2380)。
 
-## CUDA/NPU 和验证
+## NVIDIA 显卡与昇腾设备适配及验证
 
 无需增加第三方依赖。常用变换直接使用当前设备；NPU 的 FFT/STFT/DCT 和 DTW 路径会将相关数据转换到 CPU 计算再返回原设备，避免依赖未验证的复数 NPU 算子。默认频域及 DTW 方法关闭，开启后可能增加训练耗时。
 

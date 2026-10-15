@@ -1,4 +1,4 @@
-# 三通道 CF/PW/PRI
+# 三通道输入：载频、脉宽与脉冲重复周期（CF/PW/PRI）
 
 当前模型入口与 pipeline 默认使用合成数据，也支持按相同格式接入 [新数据集](NEW_DATASET_GUIDE.md)。三个输入通道按 data.yaml 的 features 指定顺序读取 CF_MHz、PW_us、PRI_us，网络输入为 [batch, 3, length]。按列名读取，不将标签当特征。
 

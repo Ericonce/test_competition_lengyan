@@ -105,7 +105,7 @@ CNN 示例支持上述长度切换；其他网络如含固定尺寸层，需要�
 
 自定义训练池输出目录时，修改训练入口 model.train() 的 data 路径；生成的 data.yaml.root 相对于 YAML 所在目录，整体迁移数据文件夹仍可读取。
 
-## Python 调用
+## 通过 Python 接口调用生成器
 
 ```python
 from pulsecls.data.synthetic import SyntheticRadarGenerator

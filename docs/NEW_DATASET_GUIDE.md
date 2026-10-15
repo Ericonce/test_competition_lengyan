@@ -1,8 +1,8 @@
 # 接入一个新数据集
 
-新数据集只要整理成 CF/PW/PRI 三通道 CSV，就可以使用现有模型训练和推理。推荐为它建立独立的数据目录、pipeline 和结果目录。下面以 **5 种辐射源**的新数据集 `new_radar` 为例。
+新数据集只要整理成 CF/PW/PRI 三通道 CSV，就可以使用现有模型训练和推理。建立数据目录和 data.yaml 后，直接修改现有 train/infer 入口的调用参数，沿用原 pipeline 和模型 YAML，无需复制配置或新增入口。下面以 **5 种辐射源**的新数据集 `new_radar` 为例。
 
-实际操作顺序：整理 CSV → 创建 data.yaml → 复制并修改 pipeline → 修改训练入口 → 从头训练 → 指定新权重推理。已有数据无需经过合成生成器。
+比赛操作顺序：整理 CSV → 创建 data.yaml → 固定采样和训练/验证划分 → 关闭增强比较模型 → 在同一划分上比较增强方法及组合 → 各入选成员全量从头训练 → 用各成员最终权重投票推理。所有阶段复用现有入口、pipeline 和模型 YAML。已有数据无需经过合成生成器。
 
 ## 1. 整理训练/验证总数据池
 
@@ -45,7 +45,7 @@ CF_MHz,PW_us,PRI_us
 
 CSV 文件名不要求从 0 连续编号，也可使用 `sample_001.csv`；普通数据会先建立文件名索引，选择好序列后才读取 CSV 内容。总池中只放用于训练/验证的数据，独立测试集另放一个目录。
 
-## 2. 创建 data.yaml
+## 2. 创建数据集描述文件（data.yaml）
 
 在 `datasets/new_radar/data.yaml` 中填写：
 
@@ -87,38 +87,13 @@ all  = datasets/new_radar/
 
 创建 data.yaml 后，可以先运行 `python tools/visualize_dataset.py --data datasets/new_radar/data.yaml`，检查原始序列、类别数量、长度分布和特征重叠，再开始训练。可调参数和输出说明见 [数据集可视化](DATA_VISUALIZATION.md)。
 
-## 3. 创建新数据集对应的 pipeline
+## 3. 沿用原 pipeline，在训练调用中覆盖参数
 
-选择需要使用的模型，例如 CNN，复制：
+选择现有 `train/` 下所需模型。例如 CNN 继续使用 `train/cnn_softmax_synthetic/train.py` 和 `configs/pipeline/cnn_softmax_synthetic.yaml`；pipeline 和模型结构 YAML 不需要复制或修改。
 
-```text
-configs/pipeline/cnn_softmax_synthetic.yaml
-  → configs/pipeline/cnn_softmax_new_radar.yaml
-```
+在 `model.train(...)` 中将 `data` 改为新 data.yaml，检查 `num_classes`、结果目录、采样比例和长度设置即可。显式的 `data` 会在加载配置时替换原引用，因此无需原合成数据集的 data.yaml 存在。完整调用范例见下一节。
 
-在复制后的文件中修改以下字段，其他网络、损失和训练字段保留。下方只展示需要调整的字段，不要用这个片段覆盖整份原 pipeline：
-
-```yaml
-name: cnn_softmax_new_radar
-data: datasets/new_radar/data.yaml
-output_dir: results/cnn_softmax_new_radar
-sequence_length: 256
-length_policy:
-  short: zero
-  long: head
-dataset:
-  sample_ratio: 1.0
-  train_ratio: 0.8
-  val_ratio: 0.2
-  seed: 2026
-  stratified: true
-train:
-  num_classes: 5
-inference:
-  num_classes: 5
-```
-
-`model` 保持引用所选模型的结构 YAML。使用其他方法时复制该方法的 pipeline 和入口，保留它原有的网络、损失和 AMP 设置。
+如果类别数和其他设置相同，只改 `data` 路径即可；若入口仍显式写着 `num_classes=100`，新任务只有 5 类，则必须同步改为 5。各方法继续沿用原有网络、损失和适用的 AMP 设置。
 
 固定长度、短序列补长和长序列裁剪策略的含义：
 
@@ -130,22 +105,15 @@ inference:
 | `long: head` | 超长时保留前面的指定数量脉冲。 |
 | `long: center` | 超长时保留中间的指定数量脉冲。 |
 
-采样和划分按 CSV 序列条数计算：先选总池的 sample_ratio，再把选中的序列按 train_ratio/val_ratio 分开。例如 1000 条序列、sample_ratio=0.5、train_ratio=0.8、val_ratio=0.2，会得到 400 条训练和 100 条验证。两项划分比例之和必须为 1。新小数据集建议先使用 sample_ratio=1.0，避免沿用现有入口的 0.01 而只选到很少样本。
+采样和划分按 CSV 序列条数计算：先选总池的 sample_ratio，再把选中的序列按 train_ratio/val_ratio 分开。例如 1000 条序列、sample_ratio=0.5、train_ratio=0.8、val_ratio=0.2，会得到 400 条训练和 100 条验证。两项划分比例之和必须为 1。模型与增强筛选可先固定采样 10%，样本少时提高比例以覆盖各类训练/验证样本；只有最终全量训练才统一设置 sample_ratio=1.0、train_ratio=1.0、val_ratio=0.0。
 
-## 4. 修改训练入口并训练
+## 4. 修改训练入口，先筛选模型再筛选增强
 
-复制现有入口到同样的目录层级，例如：
-
-```text
-train/cnn_softmax_synthetic/train.py
-  → train/cnn_softmax_new_radar/train.py
-```
-
-保留入口中的导入和 PROJECT_ROOT 初始化，在 main() 中修改 model.train()。以下展示主要参数；其他已列出的训练参数可以保留：
+直接打开现有 `train/cnn_softmax_synthetic/train.py`，保留导入和 PROJECT_ROOT 初始化，在 main() 中修改 model.train()。以下展示主要参数；其他已列出的训练参数可以保留：
 
 ```python
 model.train(
-    pipeline=PROJECT_ROOT / "configs/pipeline/cnn_softmax_new_radar.yaml",
+    pipeline=PROJECT_ROOT / "configs/pipeline/cnn_softmax_synthetic.yaml",
     data=PROJECT_ROOT / "datasets/new_radar/data.yaml",
     output_dir=PROJECT_ROOT / "results/cnn_softmax_new_radar",
     num_classes=5,
@@ -158,7 +126,7 @@ model.train(
     sequence_length=256,
     length_policy={"short": "zero", "long": "head"},
     dataset={
-        "sample_ratio": 1.0,
+        "sample_ratio": 0.1,
         "train_ratio": 0.8,
         "val_ratio": 0.2,
         "seed": 2026,
@@ -174,17 +142,23 @@ model.train(
 
 显式调用参数优先于 pipeline/data.yaml。只修改 YAML，却保留调用中的旧路径、num_classes=100 或 sample_ratio=0.01，会继续使用调用中的设置。要让某项完全由 YAML 控制，删除对应调用参数；num_classes=None 先继承 pipeline，pipeline 为 null 时训练才读取 data.yaml 的类别数。
 
-路径直接写在调用中，不需要定义 PIPELINE_YAML、DATA_YAML 等常量。复制入口时保持相同目录层级，PROJECT_ROOT 的 parents 索引就无需修改。新数据集默认从头训练，使用 resume=False 和独立 output_dir；仅继续同一类别任务、同一模型的已有训练时再开启 resume，epochs 此时表示额外轮数。
+路径直接写在调用中，不需要定义 PIPELINE_YAML、DATA_YAML 等常量，也不需要新建入口。新数据集默认从头训练，使用 resume=False 和独立 output_dir；仅继续同一类别任务、同一模型的已有训练时再开启 resume，epochs 此时表示额外轮数。
 
 开启训练增强时将 augment.enabled 改为 True，具体方法、开关、强度和顺序编辑其 preset 指向的 YAML。也可以复制共享增强 YAML，为新数据集设置独立版本，避免同时改变其他实验的增强参数。
 
 从项目根目录运行：
 
 ```bash
-python train/cnn_softmax_new_radar/train.py
+python train/cnn_softmax_synthetic/train.py
 ```
 
 终端会显示设备、实际类别数、总序列数、采样数和训练/验证数。检查这些数量是否符合预期，再根据验证 Macro-F1 调参。
+
+第一阶段关闭增强，分别运行候选模型的现有 train.py；固定数据池、dataset 字典、标签映射和长度策略，核对 dataset_selection.json 中的实际划分，保留后续参与投票的候选模型。
+
+第二阶段针对每个候选模型，沿用同一采样和划分，依次比较无增强、单种增强、不同强度和多种增强串联。调用中开启 augment.enabled，增强 YAML 中设置方法开关、阈值和 order。每次从头训练，使用独立结果目录，并保留 configs/augment.yaml 快照；不同模型可以使用不同的最终增强方案。
+
+按验证结果确定各成员的增强、训练参数、轮数及主模型，官方测试集不参与这些筛选。完整分阶段范例和投票入口代码见[主 README 的比赛流程](../README.md)。
 
 ## 5. 准备独立推理/测试文件夹
 
@@ -210,11 +184,12 @@ CSV 的列名、单位和类别编号含义与训练一致。需要评估时准�
 
 ## 6. 指定新权重进行推理
 
-复制同一模型的推理入口到 `infer/cnn_softmax_new_radar/infer.py`，保留入口初始化并修改调用：
+直接修改现有 `infer/cnn_softmax_synthetic/infer.py`，保留入口初始化和原 pipeline，显式传入新 data.yaml、测试目录及新权重：
 
 ```python
 model.infer(
-    pipeline=PROJECT_ROOT / "configs/pipeline/cnn_softmax_new_radar.yaml",
+    pipeline=PROJECT_ROOT / "configs/pipeline/cnn_softmax_synthetic.yaml",
+    data=PROJECT_ROOT / "datasets/new_radar/data.yaml",
     source=PROJECT_ROOT / "datasets/new_radar_test",
     checkpoint=PROJECT_ROOT / "results/cnn_softmax_new_radar/best_model.pt",
     save_dir=PROJECT_ROOT / "results/cnn_softmax_new_radar/infer_test",
@@ -230,15 +205,15 @@ model.infer(
 
 只预测时把 labels_file 改为 `""`，即使文件夹中有 labels.txt 也不读取标签；None 会继承 pipeline 的标签设置。推理不执行随机增强，增强 YAML 仅作为配置引用。推理按批读取 CSV，使用新权重中的训练归一化统计。
 
-pipeline 引用的 data.yaml 和模型 YAML 仍需存在以解析配置；文件夹推理不会读取训练 CSV。保留新 pipeline 与数据描述文件便于迁移服务器。
+显式传入的 data.yaml，以及原 pipeline 引用的模型 YAML 和增强 YAML 仍需存在以解析配置；不需要原合成数据集的 data.yaml。文件夹推理不会读取训练 CSV，待预测数据由 source 指定。
 
 ```bash
-python infer/cnn_softmax_new_radar/infer.py
+python infer/cnn_softmax_synthetic/infer.py
 ```
 
-结果保存在 save_dir 下的 predictions.csv；指定标签后还会生成 metrics.json、分类报告和混淆矩阵，包含 Macro-F1。各模型投票时同步修改 infer_vote.py 中的类别数和各成员 pipeline/checkpoint，所有成员须在相同辐射源标签体系上训练。
+结果保存在 save_dir 下的 predictions.csv；指定标签后还会生成 metrics.json、分类报告和混淆矩阵，包含 Macro-F1。投票时修改 infer_vote.py 中的类别数、测试目录和各成员 checkpoint；成员继续使用原 pipeline，在每个成员字典中增加 data 字段指向新 data.yaml。所有成员须在相同辐射源标签体系上训练。
 
-## 7. 调参完成后使用全部数据训练
+## 7. 筛选结束后，各成员全量训练并投票推理
 
 在训练调用中设置：
 
@@ -246,7 +221,11 @@ python infer/cnn_softmax_new_radar/infer.py
 dataset={"sample_ratio": 1.0, "train_ratio": 1.0, "val_ratio": 0.0, "seed": 2026, "stratified": True}
 ```
 
-这会关闭验证、基于验证的早停和调度，按 epochs 完成训练。使用新的结果目录保存这次最终训练，推理 checkpoint 改为该目录的 **final_model.pt**；有验证集的调参训练通常使用 best_model.pt。last_model.pt 用于断点续训。
+对所有入选投票成员分别设置上述 dataset，保留各自选定的增强方案及其他参数，使用 resume=False 和独立结果目录从头训练。轮数由前面的验证阶段确定。全量只包含可用的带标签训练池，不包含官方测试集。
+
+这会关闭验证、基于验证的早停和调度，按 epochs 完成训练。每个成员的正式推理 checkpoint 改为其全量训练目录的 **final_model.pt**；采样筛选阶段的 best_model.pt 用于验证选方案，last_model.pt 用于断点续训。
+
+正式测试使用现有 infer/infer_vote.py，设置比赛测试 source、统一类别数、主模型和各成员原 pipeline、比赛 data.yaml、最终 checkpoint。只启用已全量训练的成员，输出投票 predictions.csv，再按官方提交模板转换。无需复制投票配置或创建新推理入口。
 
 ## 8. 如果新数据集也由项目生成器生成
 

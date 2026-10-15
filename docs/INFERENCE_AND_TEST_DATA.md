@@ -108,7 +108,7 @@ python .\infer\infer_vote.py
 
 输出同样为 `predictions.csv`，增加各成员预测、`vote_count`、`vote_fraction`、`tied`、`main_prediction` 和 `main_confidence`。投票文件的 `confidence` 等于 `vote_fraction`，表示一致程度，不是模型概率；`main_confidence` 是主模型自身预测的概率。指定标签后评估最终投票结果。
 
-## PRI 与旧 TOA 配置
+## 脉冲重复周期（PRI）与旧脉冲到达时间（TOA）配置
 
 当前合成输入第三通道是 PRI。已移除 `toa_relative` 配置；它原来表示从 TOA 中减去首个到达时间，PRI 不执行这一操作。
 

@@ -193,3 +193,61 @@ def test_augment_preset_replacement_with_local_threshold(tmp_path):
     cfg = get_cfg(PIPELINE, overrides={"augment": {"preset": preset, "methods": {"jittering": {"snr_db": 20}}}})
     assert cfg["augment"]["enabled"] is False
     assert cfg["augment"]["methods"]["jittering"]["snr_db"] == 20
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_training_augment_overrides_yaml_and_master_switch_gates_all_methods(alternative_data, tmp_path, enabled):
+    import torch
+    import yaml
+    from pulsecls.data.augment import PulseAugment
+
+    preset = tmp_path / "augment.yaml"
+    preset.write_text(yaml.safe_dump({
+        "enabled": not enabled,
+        "order": ["scaling", "jittering", "time_shift", "mixup"],
+        "methods": {
+            "jittering": {"enabled": False, "prob": 1.0, "snr_db": 50.0},
+            "time_shift": {"enabled": True, "prob": 1.0, "ratio": 0.1},
+            "scaling": {"enabled": True, "prob": 1.0, "std": 0.15},
+            "mixup": {"enabled": False, "prob": 1.0, "alpha": 0.2},
+        },
+    }), encoding="utf-8")
+    cfg = get_cfg(PIPELINE, overrides={
+        "data": alternative_data,
+        "augment": {
+            "preset": preset,
+            "enabled": enabled,
+            "methods": {
+                "jittering": {"enabled": True, "snr_db": 25.0},
+                "time_shift": {"ratio": 0.25},
+                "scaling": {"enabled": False},
+                "mixup": {"enabled": True},
+            },
+            "order": ["time_shift", "jittering", "scaling", "mixup"],
+        },
+    })
+    settings = cfg["augment"]
+    assert settings["enabled"] is enabled
+    assert settings["methods"]["jittering"] == {"enabled": True, "prob": 1.0, "snr_db": 25.0}
+    assert settings["methods"]["time_shift"]["enabled"] is True  # Inherited from YAML.
+    assert settings["methods"]["time_shift"]["ratio"] == 0.25
+    assert settings["methods"]["scaling"]["enabled"] is False
+    assert settings["methods"]["scaling"]["std"] == 0.15  # Unspecified thresholds are inherited.
+
+    augment = PulseAugment(**settings)
+    inputs = torch.arange(4 * 3 * 32, dtype=torch.float32).view(4, 3, 32) + 1
+    original = inputs.clone()
+    labels = torch.tensor([0, 0, 1, 1])
+    random_state = torch.random.get_rng_state().clone()
+    with patch.object(augment.runner, "run", wraps=augment.runner.run) as run:
+        output, mixup = augment.apply(inputs, labels)
+    torch.testing.assert_close(inputs, original, rtol=0, atol=0)
+    if enabled:
+        assert [call.args[0] for call in run.call_args_list] == ["time_shift", "jittering"]
+        assert mixup is not None
+        assert not torch.equal(output, original)
+    else:
+        run.assert_not_called()
+        assert mixup is None
+        torch.testing.assert_close(output, original, rtol=0, atol=0)
+        assert torch.equal(torch.random.get_rng_state(), random_state)

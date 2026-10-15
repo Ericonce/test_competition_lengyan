@@ -1,4 +1,4 @@
-# ResNet1D-18 + Softmax
+# 一维残差网络分类模型（ResNet1D-18 + Softmax）
 
 项目已有 ResNet1D 骨干和使用它的 Modular 模型。新增的独立方法名为 **resnet_softmax**，完整名称是 **ResNet1D-18 + Softmax 脉冲序列分类模型**。
 

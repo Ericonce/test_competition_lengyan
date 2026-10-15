@@ -31,7 +31,7 @@ return model.train(
 
 断点是 epoch 级，不是 batch 级；训练在一轮中途被中断时，从最近完成轮次继续。跨 CUDA/NPU 或不同版本环境不承诺逐位一致的随机结果。此次真实续训已验证 CPU 与本机 CUDA，未重新连接服务器验证 NPU。
 
-## API 和命令行
+## 程序接口与命令行使用
 
 ```python
 model.train(resume=True, resume_checkpoint="results/.../last_model.pt", epochs=5)

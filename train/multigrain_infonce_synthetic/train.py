@@ -45,7 +45,24 @@ def main():
         data_cfg={"cache": True, "progress": True},
         augment={
             "preset": PROJECT_ROOT / "configs/augment/default.yaml",
-            "enabled": False,  # True 开启增强；方法、阈值及顺序修改上面的 YAML。
+            "enabled": False,  # 总开关：False 时下面及 YAML 中的增强都不执行。
+            # 未填写的项继承 YAML，代码中填写的项优先。
+            "methods": {
+                "jittering": {
+                    "enabled": True,
+                    "prob": 1.0,
+                    "snr_db": 40.0,
+                },
+            },
+            # 多方法依次处理前一步结果；同类融合须放在 MixUp 之前。
+            # "order": [
+            #     "jittering",
+            #     "scaling",
+            #     "time_shift",
+            #     "pulse_mask",
+            #     "interpolation",
+            #     "mixup",
+            # ],
         },
     )
 

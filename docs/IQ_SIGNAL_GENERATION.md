@@ -1,4 +1,4 @@
-# 条件化假设 IQ 信号生成
+# 条件化假设同相与正交（IQ）信号生成
 
 ## 1. 目的和边界
 
@@ -32,7 +32,7 @@ A(t) = sigmoid(k (w - t))
 
 其中 `k=48`，`w` 是由 PW 条件得到的归一化脉宽。
 
-## 3. CF/PW/PRI 到参数的映射
+## 3. 载频、脉宽与脉冲重复周期到信号参数的映射
 
 输入是训练集统计量归一化后的 `cf`、`pw` 和 `pri`，并裁剪到 `[-6, 6]`：
 
@@ -56,21 +56,21 @@ phi_0 = 2 pi sigmoid(pri)
 
 ## 4. 六种调制假设
 
-### LFM
+### 线性调频（LFM）
 
 ```text
 phi_lfm(t) =
   2 pi (N_c t + 0.5 K t^2) + phi_0
 ```
 
-### NLFM
+### 非线性调频（NLFM）
 
 ```text
 m(t) = eta sin(2 pi (1 + w) t)
 phi_nlfm(t) = 2 pi (N_c t + m(t)) + phi_0
 ```
 
-### 四状态 FSK
+### 四状态频移键控（FSK）
 
 令 `q(t)=floor(8t)`，频偏为
 
@@ -79,7 +79,7 @@ delta_f(t) = (mod(q(t), 4) - 1.5) * 0.35
 phi_fsk(t) = 2 pi ((N_c + delta_f(t)) t) + phi_0
 ```
 
-### BPSK
+### 二进制相移键控（BPSK）
 
 ```text
 q(t) = floor(8t)
@@ -87,14 +87,14 @@ b(t) = mod(q(t), 2) pi
 phi_bpsk(t) = 2 pi N_c t + b(t) + phi_0
 ```
 
-### LFM-FSK
+### 线性调频与频移键控组合（LFM-FSK）
 
 ```text
 phi_lfm_fsk(t) =
   2 pi ((N_c + delta_f(t)) t + 0.5 K t^2) + phi_0
 ```
 
-### LFM-BPSK
+### 线性调频与二进制相移键控组合（LFM-BPSK）
 
 ```text
 phi_lfm_bpsk(t) = phi_lfm(t) + b(t)
