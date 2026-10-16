@@ -56,10 +56,23 @@ def test_auto_amp_uses_bf16_only_on_supported_npu(monkeypatch, supported, expect
     assert devices.amp_dtype_for(torch.device("cuda"), "auto") == torch.float16
 
 
-def test_bf16_disables_gradient_scaling():
-    with patch.object(torch.amp, "GradScaler") as scaler:
-        devices.build_grad_scaler(torch.device("cuda"), True, "bfloat16")
-        scaler.assert_called_once_with("cuda", enabled=False)
+@pytest.mark.parametrize("dtype,enabled", [("bfloat16", False), ("float16", True)])
+def test_gradient_scaling_with_unified_amp(monkeypatch, dtype, enabled):
+    # torch.amp.GradScaler was introduced after the competition's PyTorch 2.1.
+    monkeypatch.setattr(torch, "amp", SimpleNamespace())
+    with patch.object(torch.amp, "GradScaler", create=True) as scaler:
+        result = devices.build_grad_scaler(torch.device("cuda"), True, dtype)
+        scaler.assert_called_once_with("cuda", enabled=enabled)
+        assert result is scaler.return_value
+
+
+@pytest.mark.parametrize("dtype,enabled", [("bfloat16", False), ("float16", True)])
+def test_gradient_scaling_with_legacy_amp(monkeypatch, dtype, enabled):
+    monkeypatch.setattr(torch, "amp", SimpleNamespace())
+    with patch.object(torch.cuda.amp, "GradScaler") as scaler:
+        result = devices.build_grad_scaler(torch.device("cuda"), True, dtype)
+        scaler.assert_called_once_with(enabled=enabled)
+        assert result is scaler.return_value
 
 
 def test_invalid_amp_dtype_fails_clearly():

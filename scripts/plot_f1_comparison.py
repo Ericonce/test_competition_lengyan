@@ -5,6 +5,7 @@ import csv
 import hashlib
 import json
 from pathlib import Path
+import warnings
 
 import matplotlib
 matplotlib.use("Agg")
@@ -143,6 +144,21 @@ def test_results(predictions_csv, labels_file, num_classes):
     }
 
 
+def configure_plot_style():
+    """Use Chinese labels when supported; otherwise render portable English."""
+    available = {font.name for font in font_manager.fontManager.ttflist}
+    font = next((n for n in ("Microsoft YaHei", "SimHei", "Noto Sans CJK SC") if n in available), None)
+    if font is None:
+        warnings.warn("No supported Chinese font found; using English plot labels.", UserWarning, stacklevel=2)
+    plt.rcParams.update({
+        "font.family": "sans-serif", "font.sans-serif": [font or "DejaVu Sans", "DejaVu Sans"], "font.size": 11,
+        "axes.unicode_minus": False, "axes.spines.top": False, "axes.spines.right": False,
+        "axes.linewidth": 0.8, "svg.fonttype": "none", "pdf.fonttype": 42,
+        "figure.facecolor": "white", "axes.facecolor": "white",
+    })
+    return font is not None
+
+
 def draw_panel(ax, rows, title, subtitle):
     rows = sorted(rows, key=lambda r: r["macro_f1"], reverse=True)
     colors = ["#D4A16C" if r["method_key"] == "vote" else "#36759A" if i == 0 else "#A2B8CD" for i, r in enumerate(rows)]
@@ -152,7 +168,7 @@ def draw_panel(ax, rows, title, subtitle):
     ax.invert_yaxis()
     ax.set_xlim(0, 100)
     ax.set_xticks(np.arange(0, 101, 20))
-    ax.set_xlabel("Macro F1（%）", labelpad=10)
+    ax.set_xlabel("Macro F1 (%)", labelpad=10)
     ax.set_title(title + "\n" + subtitle, loc="left", fontsize=13, pad=17, linespacing=1.6)
     ax.tick_params(axis="y", length=0, pad=8)
     ax.set_axisbelow(True)
@@ -172,27 +188,34 @@ def main(*, results_dir, predictions_csv, labels_file, output_dir):
         writer.writeheader()
         writer.writerows(rows)
     (output_dir / "comparison_audit.json").write_text(json.dumps({"validation": val_audit, "test": test_audit}, ensure_ascii=False, indent=2), encoding="utf-8")
-    available = {font.name for font in font_manager.fontManager.ttflist}
-    font = next((n for n in ("Microsoft YaHei", "SimHei", "Noto Sans CJK SC") if n in available), None)
-    if font is None:
-        raise RuntimeError("Install a Chinese font: Microsoft YaHei, SimHei, or Noto Sans CJK SC")
-    plt.rcParams.update({
-        "font.family": "sans-serif", "font.sans-serif": [font, "DejaVu Sans"], "font.size": 11,
-        "axes.unicode_minus": False, "axes.spines.top": False, "axes.spines.right": False,
-        "axes.linewidth": 0.8, "svg.fonttype": "none", "pdf.fonttype": 42,
-        "figure.facecolor": "white", "axes.facecolor": "white",
-    })
+    chinese = configure_plot_style()
     fig, axes = plt.subplots(1, 2, figsize=(14.6, 8.1))
     classes = val_audit["common"]["num_classes"]
-    draw_panel(axes[0], val, "a  验证集：全部已完成方法", f"{len(val)} 种方法 · {classes} 类 · {val[0]['num_sequences']:,} 条序列")
-    draw_panel(axes[1], test, "b  测试集：单模型与投票", f"{len(test)-1} 个成员 + 投票 · {test[0]['num_sequences']:,} 条序列")
-    fig.suptitle("合成雷达实验结果对比", fontsize=19, y=0.975)
+    if chinese:
+        val_title, val_subtitle = "a  验证集：全部已完成方法", f"{len(val)} 种方法 · {classes} 类 · {val[0]['num_sequences']:,} 条序列"
+        test_title, test_subtitle = "b  测试集：单模型与投票", f"{len(test)-1} 个成员 + 投票 · {test[0]['num_sequences']:,} 条序列"
+        title = "合成雷达实验结果对比"
+        caption = (
+            f"验证集已核对相同的采样与划分：训练 {val[0]['train_sequences']:,} 条；输入 CF / PW / PRI，长度 {val_audit['common']['sequence_length']}。\n"
+            "测试集指标由保存的各成员预测、最终投票及 labels.txt 重新计算；两个面板分别排序，横轴均从 0 开始。\n"
+            "每种方法为一次实验记录；采样器、损失与早停等训练设置有差异，无重复实验误差条。"
+        )
+    else:
+        test = [{**row, "method": f"{len(test)-1}-model voting"} if row["method_key"] == "vote" else row
+                for row in test]
+        val_title, val_subtitle = "a  Validation: all completed methods", f"{len(val)} methods | {classes} classes | {val[0]['num_sequences']:,} sequences"
+        test_title, test_subtitle = "b  Test: individual models and voting", f"{len(test)-1} members + voting | {test[0]['num_sequences']:,} sequences"
+        title = "Synthetic radar experiment comparison"
+        caption = (
+            f"Identical validation sampling/splits verified: {val[0]['train_sequences']:,} training sequences; CF / PW / PRI, length {val_audit['common']['sequence_length']}.\n"
+            "Test metrics recomputed from saved member/voting predictions and labels.txt; panels ranked independently; axes start at zero.\n"
+            "One run per method; sampler, loss and early stopping settings differ. No repeated-run error bars."
+        )
+    draw_panel(axes[0], val, val_title, val_subtitle)
+    draw_panel(axes[1], test, test_title, test_subtitle)
+    fig.suptitle(title, fontsize=19, y=0.975)
     fig.subplots_adjust(left=0.16, right=0.98, top=0.80, bottom=0.27, wspace=0.74)
-    fig.text(0.055, 0.045,
-             f"验证集已核对相同的采样与划分：训练 {val[0]['train_sequences']:,} 条；输入 CF / PW / PRI，长度 {val_audit['common']['sequence_length']}。\n"
-             "测试集指标由保存的各成员预测、最终投票及 labels.txt 重新计算；两个面板分别排序，横轴均从 0 开始。\n"
-             "每种方法为一次实验记录；采样器、损失与早停等训练设置有差异，无重复实验误差条。",
-             fontsize=10, color="#5B6572", linespacing=1.7)
+    fig.text(0.055, 0.045, caption, fontsize=10, color="#5B6572", linespacing=1.7)
     stem = output_dir / "macro_f1_comparison"
     for extension in ("png", "svg", "pdf"):
         fig.savefig(stem.with_suffix("." + extension), dpi=300, bbox_inches="tight", facecolor="white")

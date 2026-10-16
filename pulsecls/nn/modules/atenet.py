@@ -21,7 +21,17 @@ class LearnableTimeEmbedding(nn.Module):
 
     def forward(self, time: Tensor) -> Tensor:
         time = time.unsqueeze(-1)
-        return torch.cat([self.linear(time), torch.sin(self.periodic(time))], dim=-1)
+        if time.device.type == "cpu":
+            # Each projection has one input feature. Broadcasting avoids
+            # unsupported ARM CPU matmul shapes while retaining checkpoint keys.
+            dtype = time.dtype
+            if torch.is_autocast_cpu_enabled() and dtype in {torch.float16, torch.bfloat16, torch.float32}:
+                dtype = torch.get_autocast_cpu_dtype()
+            linear = (time * self.linear.weight[:, 0] + self.linear.bias).to(dtype)
+            periodic = (time * self.periodic.weight[:, 0] + self.periodic.bias).to(dtype)
+        else:
+            linear, periodic = self.linear(time), self.periodic(time)
+        return torch.cat([linear, torch.sin(periodic)], dim=-1)
 
 
 class ATENet1D(nn.Module):
