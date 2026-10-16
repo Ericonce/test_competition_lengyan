@@ -49,7 +49,7 @@ datasets/            各训练总池的 data.yaml、类别 CSV；独立平铺测
 results/             各训练结果与推理输出
 train/               通用及各模型独立训练入口，调用 model.train()
 infer/               独立、通用及投票推理入口
-tools/               数据生成、可视化、测试 CSV 重叠后检验及运行检查
+tools/               数据生成、可视化及比赛测试数据校验
 docs/                使用说明、方法说明与历史实验记录
 ```
 

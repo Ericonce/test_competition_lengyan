@@ -475,7 +475,7 @@ python tools/generate_synthetic_radar_test.py
 - [训练输出文件、指标与图片](docs/TRAINING_OUTPUTS.md)
 - [数据增强方法、阈值与顺序](docs/DATA_AUGMENTATION.md)
 - [数据集可视化工具](docs/DATA_VISUALIZATION.md)
-- [测试 CSV 重叠后检验与分类整理](docs/OVERLAP_POSTCHECK.md)
+- [比赛测试数据校验与分类整理](docs/OVERLAP_POSTCHECK.md)
 - [各模型的训练与推理入口](docs/MODEL_ENTRYPOINTS.md)
 - [独立测试集推理与多模型投票](docs/INFERENCE_AND_TEST_DATA.md)
 - [断点续训](docs/RESUME_TRAINING.md)

@@ -23,8 +23,7 @@
 | [总数据采样与训练验证划分](DATASET_SELECTION.md) | 先采样再划分，以及全量训练的设置 |
 | [数据增强说明](DATA_AUGMENTATION.md) | 增强开关、参数、执行顺序与适用范围 |
 | [数据集可视化与分析](DATA_VISUALIZATION.md) | 指定 data.yaml 查看序列与数据分布 |
-| [测试 CSV 重叠后检验](OVERLAP_POSTCHECK.md) | SHA、数值相同与双向连续包含核验，按类别整理唯一匹配文件 |
-| [后检验脚本真实昇腾验证](OVERLAP_POSTCHECK_ASCEND_20261016.md) | 实际 910B3 环境、自动测试、真实雷达 CSV 样例与依赖告警 |
+| [比赛测试数据校验](OVERLAP_POSTCHECK.md) | 检查训练与测试序列重叠，整理类别目录和可用标签 |
 | [合成数据难度审计记录](SYNTHETIC_DATASET_AUDIT.md) | 数据难度调整、实验协议与重训记录 |
 
 ## 训练、推理与结果
