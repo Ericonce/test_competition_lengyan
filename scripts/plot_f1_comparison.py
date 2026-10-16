@@ -5,12 +5,10 @@ import csv
 import hashlib
 import json
 from pathlib import Path
-import warnings
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib import font_manager
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -130,7 +128,7 @@ def test_results(predictions_csv, labels_file, num_classes):
         macro_f1, accuracy = matrix_metrics(matrix)
         method = column.removesuffix("_prediction") if column != "prediction" else "vote"
         rows.append({
-            "split": "test", "method": f"{len(columns)} 模型投票" if method == "vote" else METHOD_LABELS.get(method, method),
+            "split": "test", "method": f"{len(columns)}-model voting" if method == "vote" else METHOD_LABELS.get(method, method),
             "method_key": method, "macro_f1": macro_f1, "macro_f1_percent": macro_f1 * 100,
             "accuracy": accuracy, "num_sequences": len(records), "num_classes": num_classes,
             "source": relative(predictions_csv), "labels_source": relative(labels_file),
@@ -145,18 +143,13 @@ def test_results(predictions_csv, labels_file, num_classes):
 
 
 def configure_plot_style():
-    """Use Chinese labels when supported; otherwise render portable English."""
-    available = {font.name for font in font_manager.fontManager.ttflist}
-    font = next((n for n in ("Microsoft YaHei", "SimHei", "Noto Sans CJK SC") if n in available), None)
-    if font is None:
-        warnings.warn("No supported Chinese font found; using English plot labels.", UserWarning, stacklevel=2)
+    """Render English labels with Matplotlib's bundled DejaVu Sans font."""
     plt.rcParams.update({
-        "font.family": "sans-serif", "font.sans-serif": [font or "DejaVu Sans", "DejaVu Sans"], "font.size": 11,
+        "font.family": "sans-serif", "font.sans-serif": ["DejaVu Sans"], "font.size": 11,
         "axes.unicode_minus": False, "axes.spines.top": False, "axes.spines.right": False,
         "axes.linewidth": 0.8, "svg.fonttype": "none", "pdf.fonttype": 42,
         "figure.facecolor": "white", "axes.facecolor": "white",
     })
-    return font is not None
 
 
 def draw_panel(ax, rows, title, subtitle):
@@ -188,29 +181,17 @@ def main(*, results_dir, predictions_csv, labels_file, output_dir):
         writer.writeheader()
         writer.writerows(rows)
     (output_dir / "comparison_audit.json").write_text(json.dumps({"validation": val_audit, "test": test_audit}, ensure_ascii=False, indent=2), encoding="utf-8")
-    chinese = configure_plot_style()
+    configure_plot_style()
     fig, axes = plt.subplots(1, 2, figsize=(14.6, 8.1))
     classes = val_audit["common"]["num_classes"]
-    if chinese:
-        val_title, val_subtitle = "a  验证集：全部已完成方法", f"{len(val)} 种方法 · {classes} 类 · {val[0]['num_sequences']:,} 条序列"
-        test_title, test_subtitle = "b  测试集：单模型与投票", f"{len(test)-1} 个成员 + 投票 · {test[0]['num_sequences']:,} 条序列"
-        title = "合成雷达实验结果对比"
-        caption = (
-            f"验证集已核对相同的采样与划分：训练 {val[0]['train_sequences']:,} 条；输入 CF / PW / PRI，长度 {val_audit['common']['sequence_length']}。\n"
-            "测试集指标由保存的各成员预测、最终投票及 labels.txt 重新计算；两个面板分别排序，横轴均从 0 开始。\n"
-            "每种方法为一次实验记录；采样器、损失与早停等训练设置有差异，无重复实验误差条。"
-        )
-    else:
-        test = [{**row, "method": f"{len(test)-1}-model voting"} if row["method_key"] == "vote" else row
-                for row in test]
-        val_title, val_subtitle = "a  Validation: all completed methods", f"{len(val)} methods | {classes} classes | {val[0]['num_sequences']:,} sequences"
-        test_title, test_subtitle = "b  Test: individual models and voting", f"{len(test)-1} members + voting | {test[0]['num_sequences']:,} sequences"
-        title = "Synthetic radar experiment comparison"
-        caption = (
-            f"Identical validation sampling/splits verified: {val[0]['train_sequences']:,} training sequences; CF / PW / PRI, length {val_audit['common']['sequence_length']}.\n"
-            "Test metrics recomputed from saved member/voting predictions and labels.txt; panels ranked independently; axes start at zero.\n"
-            "One run per method; sampler, loss and early stopping settings differ. No repeated-run error bars."
-        )
+    val_title, val_subtitle = "a  Validation: all completed methods", f"{len(val)} methods | {classes} classes | {val[0]['num_sequences']:,} sequences"
+    test_title, test_subtitle = "b  Test: individual models and voting", f"{len(test)-1} members + voting | {test[0]['num_sequences']:,} sequences"
+    title = "Synthetic radar experiment comparison"
+    caption = (
+        f"Identical validation sampling/splits verified: {val[0]['train_sequences']:,} training sequences; CF / PW / PRI, length {val_audit['common']['sequence_length']}.\n"
+        "Test metrics recomputed from saved member/voting predictions and labels.txt; panels ranked independently; axes start at zero.\n"
+        "One run per method; sampler, loss and early stopping settings differ. No repeated-run error bars."
+    )
     draw_panel(axes[0], val, val_title, val_subtitle)
     draw_panel(axes[1], test, test_title, test_subtitle)
     fig.suptitle(title, fontsize=19, y=0.975)
