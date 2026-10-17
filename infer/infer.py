@@ -16,6 +16,7 @@ from pulsecls.cfg import get_cfg
 def build_parser():
     parser = argparse.ArgumentParser(description="直接读取测试文件夹内的 CSV，每个 CSV 为一个序列")
     parser.add_argument("--pipeline", help="切换 pipeline 时，未提供的参数继承该 YAML")
+    parser.add_argument("--data", help="训练任务的 data.yaml，覆盖 pipeline 中的数据引用")
     parser.add_argument("--source", help="测试 CSV 文件夹")
     parser.add_argument("--checkpoint", help="推理权重路径")
     parser.add_argument("--labels-file", help="可选的 labels.txt，指定后才评估")
@@ -38,7 +39,7 @@ def main():
     # CLI 切换模型时，继承指定 pipeline，避免带入 CNN 的类别数和权重。
     if args.pipeline is not None:
         overrides = {key: getattr(args, key) for key in (
-            "source", "checkpoint", "labels_file", "output_dir", "save_dir",
+            "data", "source", "checkpoint", "labels_file", "output_dir", "save_dir",
             "device", "num_classes", "sequence_length",
         ) if getattr(args, key) is not None}
         if args.batch_size is not None:
@@ -52,7 +53,7 @@ def main():
         ) if value is not None}
         if policy:
             overrides["length_policy"] = {
-                **get_cfg(args.pipeline)["data_cfg"].get("length_policy", {}), **policy,
+                **get_cfg(args.pipeline, overrides={"data": args.data})["data_cfg"].get("length_policy", {}), **policy,
             }
         return model.infer(
             pipeline=args.pipeline,
@@ -64,6 +65,7 @@ def main():
     # 常用参数直接修改这里；CLI 显式参数优先于这里的默认值。
     return model.infer(
         pipeline=PROJECT_ROOT / "configs/pipeline/cnn_softmax_synthetic.yaml",
+        data=args.data or PROJECT_ROOT / "datasets/synthetic_radar_overlap/data.yaml",
         source=args.source or PROJECT_ROOT / "datasets/synthetic_radar_test",
         checkpoint=args.checkpoint or (
             None if args.output_dir else

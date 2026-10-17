@@ -16,6 +16,7 @@ def main():
     # 显式参数优先于 YAML；输入是平铺 CSV 的文件夹。
     return model.infer(
         pipeline=PROJECT_ROOT / "configs/pipeline/modular_multigrain_iq_synthetic.yaml",
+        data=PROJECT_ROOT / "datasets/synthetic_radar_overlap/data.yaml",
         source=PROJECT_ROOT / "datasets/synthetic_radar_test",
         checkpoint=PROJECT_ROOT / "results/modular_multigrain_iq_synthetic/best_model.pt",  # 无验证集训练时改为 final_model.pt。
         save_dir=PROJECT_ROOT / "results/modular_multigrain_iq_synthetic/infer_test",  # predictions.csv 直接保存在此目录。

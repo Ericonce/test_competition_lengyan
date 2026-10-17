@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from pulsecls.cfg import load_yaml
+from pulsecls.data.cache import cache_directory
 
 
 def _class_dirs(directory):
@@ -54,11 +55,11 @@ def load_inventory(root, data_cfg):
     manifests = sorted(set(p.resolve() for p in manifests))
     metadata = [root / name for name in ("generation_config.yaml", "summary.json", "emitters.json", "dataset_index.json") if (root / name).is_file()]
     stamps = [_stamp(p) for p in directories + manifests + metadata]
-    cache_dir = root / ".pulsecls_cache"
+    cache_dir = cache_directory(root, data_cfg)
     source_key = hashlib.sha256(json.dumps([str(p) for p in directories + manifests]).encode()).hexdigest()[:12]
-    cache_path = cache_dir / f"file_index_{source_key}.json"
+    cache_path = cache_dir / f"file_index_{source_key}.json" if cache_dir is not None else None
     cached = None
-    if cache_path.exists():
+    if cache_path is not None and cache_path.exists():
         try:
             cached = json.loads(cache_path.read_text(encoding="utf-8"))
             if cached.get("version") == 1 and cached.get("stamps") == stamps:
@@ -103,13 +104,13 @@ def load_inventory(root, data_cfg):
         raise FileNotFoundError(f"No CSV sequences found under dataset root: {root}")
     fingerprint = hashlib.sha256(json.dumps([stamps, classes], sort_keys=True).encode()).hexdigest()
     payload = {"version": 1, "stamps": stamps, "classes": classes, "fingerprint": fingerprint}
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    temporary = cache_path.with_name(f".{cache_path.name}.{uuid4().hex}.tmp")
-    try:
-        temporary.write_text(json.dumps(payload), encoding="utf-8")
-        temporary.replace(cache_path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    if cache_path is not None:
+        temporary = cache_path.with_name(f".{cache_path.name}.{uuid4().hex}.tmp")
+        try:
+            temporary.write_text(json.dumps(payload), encoding="utf-8")
+            temporary.replace(cache_path)
+        finally:
+            temporary.unlink(missing_ok=True)
     return classes, fingerprint, origin
 
 

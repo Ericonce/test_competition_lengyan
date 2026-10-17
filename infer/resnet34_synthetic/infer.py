@@ -15,6 +15,7 @@ def main():
     model = PulseCLS()
     return model.infer(
         pipeline=PROJECT_ROOT / "configs/pipeline/resnet34_synthetic.yaml",
+        data=PROJECT_ROOT / "datasets/synthetic_radar_overlap/data.yaml",
         source=PROJECT_ROOT / "datasets/synthetic_radar_test",
         checkpoint=PROJECT_ROOT / "results/resnet34_synthetic/best_model.pt",
         save_dir=PROJECT_ROOT / "results/resnet34_synthetic/infer_test",

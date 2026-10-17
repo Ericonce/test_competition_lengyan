@@ -2,6 +2,8 @@
 
 本项目用于**根据一条脉冲序列，判断它属于哪个辐射源类别**。输入为三个通道：载频（CF）、脉宽（PW）、脉冲重复周期（PRI）。支持不同分类模型的训练、验证、单模型推理和多模型投票。
 
+Windows 10 工作站可使用独立 Conda 环境进行 CPU 调试、训练和推理，安装与 VS Code 断点操作见 [Windows 调试指南](docs/WINDOWS_DEBUG.md)。
+
 **参加比赛时使用主办方提供的数据，直接修改现有 train/infer 入口的参数即可。** 不需要复制 pipeline、模型 YAML 或另建训练入口，也不需要运行合成数据生成器。现有路径中的 `_synthetic` 是历史命名，不限制模型只能使用合成数据；`model.train(data=...)` 指向哪里，就读取哪个数据集。
 
 训练数据统一按类别分文件夹；标签表、文件名标签或大表数据先用 [转换工具](docs/DATA_INPUT_FORMATS.md) 整理，再将 `data` 指向转换后的 `data.yaml`。
@@ -246,6 +248,8 @@ python train/cnn_softmax_synthetic/train.py
 
 流程是：**建立文件索引 → 选择要使用的序列 → 划分训练/验证 → 读取所选 CSV → 统一长度 → 训练**，不会先加载全部 CSV 内容再采样。训练开启增强时，先在原始特征上增强，再用训练集统计量按通道标准化；验证和推理不执行随机增强，使用训练时计算的统计量。
 
+开跑时核对终端打印的设备、总样本数、采样数和训练/验证数量。现有入口的 `sample_ratio=0.01` 只使用总池的 1%；使用全部数据时改为 `1.0`。
+
 例如总池有 100,000 条序列，上述设置会选取 10,000 条，再分成约 8,000 条训练、2,000 条验证；其余 90,000 条不参与本阶段。采样规模应足够覆盖各类别的训练和验证样本，过少时应提高 `sample_ratio`。
 
 在其他候选模型的现有 train.py 中设置相同的 data.yaml、`dataset` 字典、标签映射和长度策略，并保持 `augment.enabled=False`。相同数据池和固定采样/划分设置使各模型使用相同序列；不要每换一个模型就换采样种子。
@@ -427,6 +431,8 @@ python infer/infer_vote.py
 
 如需单独检查某个成员，也可使用其现有 `infer/<方法名>_synthetic/infer.py`，修改 data、source、checkpoint 和类别数；正式提交流程使用上述投票入口。
 
+训练和推理的 `data` 都指向本次比赛数据的 `data.yaml`。更换数据后同步修改推理入口及投票成员的 `data`，配置解析就无需原合成数据目录。通用 `infer/infer.py` 也支持 `--data 数据目录/data.yaml`。
+
 ### 3.8 将投票结果整理为比赛提交文件
 
 上述范例的投票输出保存在：
@@ -448,7 +454,25 @@ results/competition/infer_vote/predictions.csv
 
 从项目根目录运行上述命令。核心依赖包括 PyTorch、NumPy、PyYAML、tqdm、scikit-learn、Matplotlib 等；使用昇腾时还需要匹配的 CANN、驱动和 `torch_npu` 环境。
 
+使用自带双 Conda 镜像时，通过网页工作区把代码上传、解压到 `/workspace/test_competition_lengyan`。进入网页终端后，先修改训练入口的数据路径及参数，再执行：
+
+```bash
+tmux new -s radar
+source /data/lym/anaconda3/etc/profile.d/conda.sh
+conda activate radar
+cd /workspace/test_competition_lengyan
+python train/cnn_softmax_synthetic/train.py
+```
+
+`/data/lym/anaconda3` 随镜像携带，比赛宿主机无需有同名目录。按 `Ctrl+B`，松开再按 `D` 可分离；重新打开终端执行 `tmux attach -t radar` 返回。容器停止时任务也会停止。
+
+也可用 `bash scripts/run_on_ascend.sh train/cnn_softmax_synthetic/train.py` 自动激活 `radar`，将运行缓存和日志放到项目的 `results/ascend_runtime`。推理时把最后的脚本路径换成对应的 `infer.py`。
+
 `device="auto"` 优先选择 NVIDIA CUDA，其次昇腾 NPU，最后 CPU。可以显式设置 `cuda:0` 或 `npu:0`。`use_amp=True` 开启混合精度，范例通过 `amp_dtype="float16"` 指定精度类型。每个训练 epoch、验证阶段与推理批次均有终端进度提示。
+
+比赛训练建议明确设置 `device="npu:0"`，第二张卡用 `npu:1`；设备不可用时会直接报错。Windows 调试使用 `device="cpu"`。两个单卡任务分别运行时，使用不同的 `output_dir`。
+
+训练数据目录只读时，启用的缓存自动改存到系统临时目录；上述启动脚本会统一写入可写的 `results/ascend_runtime/cache/data`。`data_cfg={"cache": False}` 同时关闭样本缓存和文件索引缓存，无需修改原始数据目录权限。
 
 `requirements_npu.txt` 是昇腾环境的依赖版本记录，包含平台相关包，应按目标服务器环境核对；CUDA 环境不应直接照搬其中的昇腾软件栈。昇腾 Transformer/TCN 适配与实测说明见[昇腾性能记录](docs/ASCEND_PERFORMANCE_20261015.md)。
 

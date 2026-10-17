@@ -1,5 +1,6 @@
 """Check entrypoint configuration without loading project weights or large datasets."""
 import ast
+import json
 import runpy
 from pathlib import Path
 from unittest.mock import patch
@@ -72,3 +73,27 @@ def test_cli_output_directory_changes_automatic_checkpoint_and_predictions(monke
         assert kwargs["output_dir"] == "results/another_training_run"
     with patch.object(PulseCLS, "infer", capture):
         runpy.run_path(str(entry), run_name="__main__")
+
+
+def test_cli_data_override_resolves_length_policy_without_original_dataset(tmp_path, monkeypatch):
+    entry = REPO_ROOT / "infer/infer.py"
+    data = tmp_path / "data.yaml"
+    data.write_text(json.dumps({"root": ".", "root_relative_to_yaml": True,
+        "num_classes": 2, "features": ["CF_MHz", "PW_us", "PRI_us"]}))
+    pipeline = tmp_path / "pipeline.yaml"
+    pipeline.write_text(json.dumps({"task": "classify", "data": "missing/data.yaml",
+        "model": str(REPO_ROOT / "configs/model/cnn1d.yaml"),
+        "output_dir": str(tmp_path / "out"), "sequence_length": 32,
+        "length_policy": {"short": "zero", "long": "head"}}))
+    monkeypatch.setattr("sys.argv", [str(entry), "--pipeline", str(pipeline),
+        "--data", str(data), "--short-policy", "repeat", "--device", "cpu"])
+    seen = []
+    def capture(self, **kwargs):
+        assert kwargs["data"] == str(data)
+        assert kwargs["length_policy"] == {"short": "repeat", "long": "head"}
+        cfg = get_cfg(kwargs["pipeline"], overrides={"data": kwargs["data"], "device": kwargs["device"]})
+        assert cfg["data_cfg"]["num_classes"] == 2
+        seen.append(kwargs)
+    with patch.object(PulseCLS, "infer", capture):
+        runpy.run_path(str(entry), run_name="__main__")
+    assert len(seen) == 1

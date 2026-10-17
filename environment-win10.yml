@@ -1,0 +1,11 @@
+name: radar_win10
+channels:
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main
+  - nodefaults
+dependencies:
+  - python=3.10.22
+  - pip=25.3
+  - setuptools=80.9.0
+  - wheel=0.45.1
+  - pip:
+      - -r requirements_win10.txt

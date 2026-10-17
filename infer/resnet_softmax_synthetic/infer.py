@@ -15,6 +15,7 @@ def main():
     model = PulseCLS()
     return model.infer(
         pipeline=PROJECT_ROOT / "configs/pipeline/resnet_softmax_synthetic.yaml",
+        data=PROJECT_ROOT / "datasets/synthetic_radar_overlap/data.yaml",
         source=PROJECT_ROOT / "datasets/synthetic_radar_test",
         checkpoint=PROJECT_ROOT / "results/resnet_softmax_synthetic/best_model.pt",  # 无验证训练时用 final_model.pt。
         save_dir=PROJECT_ROOT / "results/resnet_softmax_synthetic/infer_test",

@@ -12,6 +12,7 @@ import torch
 from torch.utils.data import BatchSampler, Dataset, WeightedRandomSampler
 
 from pulsecls.cfg import normalize_dataset_path, remap_repo_path
+from pulsecls.data.cache import cache_directory
 from pulsecls.data.sources import input_config, require_class_folders
 from pulsecls.utils.progress import Progress
 
@@ -176,15 +177,15 @@ def load_split_arrays(
         split_name = normalize_dataset_path(data_cfg[split_key])
         records = None
     sequence_length = int(data_cfg["sequence_length"])
-    use_cache = bool(data_cfg.get("cache", True))
+    cache_dir = cache_directory(root, data_cfg)
     features = data_cfg.get("features", list(DEFAULT_FEATURES[:2]))
     length_policy = data_cfg.get("length_policy")
     signature = hashlib.sha256(json.dumps([features, length_policy, selection_info and selection_info["settings"], selection_info and selection_info["source_fingerprint"], 6], ensure_ascii=True, sort_keys=True).encode()).hexdigest()[:12]
     filename = (f"{split_key}_seq{sequence_length}_c{len(features)}_{signature}.npz"
                 if "features" in data_cfg or length_policy or selection_info else f"{split_key}_seq{sequence_length}.npz")
-    cache_file = root / ".pulsecls_cache" / filename
+    cache_file = cache_dir / filename if cache_dir is not None else None
 
-    if use_cache and cache_file.exists():
+    if cache_file is not None and cache_file.exists():
         with Progress(f"Read {split_key} cache", unit="steps", enabled=data_cfg.get("progress", True)):
             with np.load(cache_file, allow_pickle=False) as cached:
                 labels = cached["labels"].astype(np.int64, copy=False)
@@ -226,7 +227,7 @@ def load_split_arrays(
         f"in {time.perf_counter() - started:.1f}s"
     )
 
-    if use_cache:
+    if cache_file is not None:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         relative_paths = [Path(path).relative_to(root).as_posix() for path in paths]
         temporary = cache_file.with_name(f".{cache_file.stem}.{uuid4().hex}.npz")
