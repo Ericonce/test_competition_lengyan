@@ -25,6 +25,12 @@ weight_decay: 0.0001
 early_stopping_patience: 6
 use_amp: true
 amp_dtype: float16  # auto selects BF16 on supported NPU devices; CUDA keeps FP16.
+normalization:
+  method: zscore  # zscore, minmax, maxabs, robust, log_zscore, none
+  eps: 0.000001
+  feature_range: [0.0, 1.0]  # minmax can also use [-1.0, 1.0].
+  quantile_range: [25.0, 75.0]  # robust scaling uses this percentile interval.
+  clip: false  # minmax only; false preserves values beyond the training range.
 progress_metric_interval: 10  # Batch interval for copying progress metrics from the accelerator.
 two_views: true
 metrics_prior_alpha: 0.0

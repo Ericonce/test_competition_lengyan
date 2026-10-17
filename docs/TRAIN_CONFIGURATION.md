@@ -21,6 +21,7 @@ return model.train(
     lr=0.001,
     labelsmooth=0.0,  # 0 关闭标签平滑；例如 0.1 开启。
     visualize=True,  # 默认绘图；False 跳过所有训练结果图和 t-SNE。
+    normalization="zscore",  # zscore / minmax / maxabs / robust / log_zscore / none。
     device="auto",
     resume=False,
     resume_checkpoint=PROJECT_ROOT / "results/cnn_softmax_synthetic_overlap_small/last_model.pt",
@@ -48,6 +49,8 @@ TCN 默认 `npu_conv_backend: native`，Ascend910B3 上原生卷积实测比 `ph
 早停支持 `patience=10` 简写，与 `early_stopping_patience=10` 等价：连续 10 轮验证 Macro-F1 未改善时停止。也支持 `train={"patience": 10}`、`**{"train.patience": 10}` 和 YAML 的 `train.patience`。建议只写其中一种；同一配置层两种名称都填写时，非 None 的 patience 优先。跨层仍遵循代码优先于 YAML、直接训练参数优先于 train 字典的规则。patience=None 不覆盖已有设置；无验证集时不启用基于验证的早停。
 
 ## 推理入口
+
+归一化可通过 `normalization="minmax"` 等设置，详细参数及各方案公式见[归一化设置](NORMALIZATION.md)。所有模型共用该配置；默认保持 Z-score。推理与续训自动使用权重保存的方案及训练统计。
 
 ```python
 return model.infer(

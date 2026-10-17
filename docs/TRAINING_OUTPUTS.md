@@ -12,6 +12,7 @@ results/<方法>/
 ├── training.log                        # 参数、训练日志与结果；续训时追加
 ├── dataset_selection.json              # 采样、划分与序列路径（采用 pipeline 划分时）
 ├── normalization.npz                   # 训练数据标准化统计量
+├── normalization.json                  # 完整归一化方案、偏移与缩放参数
 ├── resolved_pipeline.json              # 完整生效配置与实际运行信息
 ├── configs/
 │   ├── pipeline.yaml                   # 完整生效配置，包含 train/loss/runtime

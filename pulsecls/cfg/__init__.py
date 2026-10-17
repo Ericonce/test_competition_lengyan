@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from pulsecls.utils.normalization import normalization_config
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CFG_PATH = Path(__file__).resolve().parent / "default.yaml"
 
@@ -48,7 +50,7 @@ DEFAULT_CFG = SimpleNamespace(**DEFAULT_CFG_DICT)
 TRAIN_DEFAULTS = {key: deepcopy(DEFAULT_CFG_DICT[key]) for key in (
     "device", "seed", "epochs", "resume", "resume_checkpoint", "batch_size",
     "num_workers", "sampler", "optimizer", "lr", "weight_decay",
-    "early_stopping_patience", "use_amp", "amp_dtype", "progress_metric_interval", "two_views", "metrics_prior_alpha", "num_classes", "reporting", "visualize",
+    "early_stopping_patience", "use_amp", "amp_dtype", "normalization", "progress_metric_interval", "two_views", "metrics_prior_alpha", "num_classes", "reporting", "visualize",
 )}
 TRAIN_DEFAULTS["optimizer_foreach"] = False
 
@@ -285,6 +287,9 @@ def get_cfg(
             preset = value.pop("preset")
             pipeline[section] = load_yaml(resolve_path(preset, base_dir))
         pipeline[section] = deep_update(pipeline.get(section, {}), value)
+    normalization = pipeline.setdefault("train", {}).get("normalization")
+    if normalization is None or isinstance(normalization, str):
+        pipeline["train"]["normalization"] = {} if normalization is None else {"method": normalization}
     # Dotted keys allow overriding any leaf, including custom model parameters.
     aliases = {"data": "data_cfg", "model": "model_cfg"}
     for key in list(overrides):
@@ -321,6 +326,8 @@ def get_cfg(
         else:
             raise ValueError(f"Unknown configuration override '{key}'; use train={{...}}, model={{...}}, data_cfg={{...}}, augment={{...}}, loss={{...}} or a dotted key")
     pipeline["train"] = deep_update(TRAIN_DEFAULTS, pipeline.get("train", {}))
+    pipeline["train"]["normalization"] = normalization_config(
+        pipeline["train"]["normalization"], defaults=TRAIN_DEFAULTS["normalization"])
     if not isinstance(pipeline["train"]["visualize"], bool):
         raise TypeError("visualize must be true/false")
     ce_cfg = pipeline.get("loss", {}).get("ce", {})
@@ -364,6 +371,8 @@ def entrypoint(argv: list[str] | None = None) -> None:
     train_parser.add_argument("--epochs", type=int, default=None)
     train_parser.add_argument("--batch-size", type=int, default=None)
     train_parser.add_argument("--labelsmooth", type=float, default=None, help="Label smoothing in [0, 1]; 0 disables it")
+    train_parser.add_argument("--normalization", choices=("zscore", "minmax", "maxabs", "robust", "log_zscore", "none"),
+                              default=None, help="Feature normalization fitted only on training pulses")
     train_parser.add_argument("--visualize", action=argparse.BooleanOptionalAction, default=None,
                               help="Save training figures and validation t-SNE (default: enabled)")
     train_parser.add_argument("--resume", action="store_true", default=None)
@@ -397,6 +406,7 @@ def entrypoint(argv: list[str] | None = None) -> None:
             epochs=args.epochs,
             batch_size=args.batch_size,
             labelsmooth=args.labelsmooth,
+            normalization=args.normalization,
             visualize=args.visualize,
             num_classes=args.num_classes,
         )

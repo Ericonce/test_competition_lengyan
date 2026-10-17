@@ -4,7 +4,7 @@
 
 PRI 为脉冲重复周期，允许固定、参差、抖动、正弦和滑变，不需要减去首值或保持递增。生成器不生成 IQ；部分分类模型会构建假设 IQ 视图作为内部特征，这不改变原始三通道输入。
 
-输入长度及补零/循环重复、裁剪策略由各 pipeline 的 sequence_length、length_policy 提供默认值，train/infer 调用中显式设置的参数优先。补零行不参与训练归一化统计，标准化后仍为零；推理使用训练检查点保存的均值与标准差。
+输入长度及补零/循环重复、裁剪策略由各 pipeline 的 sequence_length、length_policy 提供默认值，train/infer 调用中显式设置的参数优先。补零行不参与训练归一化统计，变换后仍为零；推理使用训练检查点保存的方案与统计。默认 Z-score，也支持 Min-Max、MaxAbs、Robust、对数后 Z-score 及原值输入，见[归一化设置](NORMALIZATION.md)。
 
 数据增强的数值扰动、遮蔽与序列变换按 CF/PW/PRI 处理，详细开关见 [增强说明](DATA_AUGMENTATION.md)。
 

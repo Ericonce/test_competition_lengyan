@@ -450,6 +450,8 @@ results/competition/infer_vote/predictions.csv
 
 `requirements_npu.txt` 是昇腾环境的依赖版本记录，包含平台相关包，应按目标服务器环境核对；CUDA 环境不应直接照搬其中的昇腾软件栈。昇腾 Transformer/TCN 适配与实测说明见[昇腾性能记录](docs/ASCEND_PERFORMANCE_20261015.md)。
 
+三个特征默认按训练集统计做 Z-score。可在现有 `model.train(...)` 中设置 `normalization="minmax"`，也支持 `maxabs`、`robust`、`log_zscore` 和 `none`；Min-Max 可配置 `[0,1]` 或 `[-1,1]`。推理和续训自动读取权重中的方案，详见[归一化设置](docs/NORMALIZATION.md)。
+
 数据集、权重和结果已被 `.gitignore` 忽略，从 GitHub 下载代码后需要自行准备比赛数据与可用权重。迁移机器时，检查所有自定义路径和运行环境。
 
 ## 5. 合成数据与辅助工具：开发测试时使用

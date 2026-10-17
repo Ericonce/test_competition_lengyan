@@ -16,6 +16,7 @@ from pulsecls.data.selection import validation_enabled
 from pulsecls.nn.tasks import build_model
 from pulsecls.utils.device import amp_dtype_for, autocast_context, get_device, pin_memory_for, use_amp_for
 from pulsecls.utils.metrics import compute_metrics, save_classification_outputs
+from pulsecls.utils.normalization import FeatureNormalizer
 from pulsecls.utils.progress import Progress
 
 
@@ -81,8 +82,9 @@ class BasePredictor:
             self.model = self.get_model().to(self.device)
             self.model.load_state_dict(self.checkpoint["model_state_dict"])
             self.model.eval()
-        self.mean = np.asarray(self.checkpoint["mean"], dtype=np.float32)
-        self.std = np.asarray(self.checkpoint["std"], dtype=np.float32)
+        self.normalizer = FeatureNormalizer.from_checkpoint(self.checkpoint, len(self.data_cfg["features"]))
+        self.mean, self.std = self.normalizer.mean, self.normalizer.std
+        print(f"Checkpoint normalization: {self.normalizer.config['method']}", flush=True)
         class_counts = np.asarray(
             self.checkpoint.get(
                 "train_class_counts",
@@ -159,7 +161,7 @@ class BasePredictor:
 
     def predict_paths(self, paths):
         from pulsecls.data.inference import InferenceCSVDataset
-        dataset = InferenceCSVDataset(paths, self.data_cfg, self.mean, self.std)
+        dataset = InferenceCSVDataset(paths, self.data_cfg, self.mean, self.std, normalizer=self.normalizer)
         return self._predict_dataset(dataset)
 
     def predict_folder(self, source, labels_file=None, save_dir=None):
@@ -178,7 +180,8 @@ class BasePredictor:
         data, labels, paths = load_split_arrays({**self.data_cfg, "progress": self.show_progress}, split_key)
         if not len(labels):
             raise ValueError(f"No sequences in requested split: {split_key}")
-        dataset = PulseArrayDataset(data, labels, self.mean, self.std, zero_padding=zero_padding_enabled(self.data_cfg))
+        dataset = PulseArrayDataset(data, labels, self.mean, self.std, zero_padding=zero_padding_enabled(self.data_cfg),
+                                    normalizer=self.normalizer)
         predictions, confidence = self._predict_dataset(dataset)
         target = Path(save_dir) if save_dir is not None else self.output_dir / f"infer_{split_key}"
         return save_prediction_outputs(target, paths, predictions, confidence, labels, self.num_classes,

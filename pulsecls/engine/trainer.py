@@ -21,7 +21,6 @@ from pulsecls.data.selection import select_records, validation_enabled
 from pulsecls.data.dataset import (
     PulseArrayDataset,
     MergeLastSingletonBatchSampler,
-    feature_stats,
     load_split_arrays,
     make_balanced_sampler,
     zero_padding_enabled,
@@ -40,6 +39,7 @@ from pulsecls.utils.device import (
 )
 from pulsecls.utils.metrics import compute_metrics, save_classification_outputs
 from pulsecls.utils.seed import seed_everything
+from pulsecls.utils.normalization import FeatureNormalizer
 from pulsecls.utils.progress import Progress
 from pulsecls.utils.training_outputs import (
     clean_analysis_outputs, reporting_config, save_configuration, save_predictions,
@@ -83,8 +83,10 @@ class BaseTrainer:
         self.num_classes = int(self.data_cfg["num_classes"])
         self.device = get_device(self.train_cfg.get("device"))
         self.amp_dtype = amp_dtype_for(self.device, self.train_cfg.get("amp_dtype", "float16"))
-        self.normalization_mean = torch.zeros(1, len(self.data_cfg.get("features", ["CF_MHz", "PW_us", "PRI_us"])), 1, device=self.device)
-        self.normalization_std = torch.ones_like(self.normalization_mean)
+        channels = len(self.data_cfg.get("features", ["CF_MHz", "PW_us", "PRI_us"]))
+        self.normalizer = FeatureNormalizer.from_checkpoint(
+            {"mean": np.zeros(channels, np.float32), "std": np.ones(channels, np.float32)}, channels).to(self.device)
+        self.normalization_mean, self.normalization_std = self.normalizer.offset, self.normalizer.scale
 
     def _build_loaders(self) -> tuple[DataLoader, DataLoader | None, np.ndarray, np.ndarray, np.ndarray, list[int]]:
         self.selection_info = None
@@ -106,13 +108,15 @@ class BaseTrainer:
             self.val_paths = []
         with Progress("Prepare raw train/val data and normalization statistics", unit="steps", enabled=self.data_cfg.get("progress", True)):
             zero_padding = zero_padding_enabled(self.data_cfg)
-            mean, std = feature_stats(train_data, ignore_zero_padding=True) if zero_padding else feature_stats(train_data)
             resumed = getattr(self, "resume_checkpoint", None)
             if resumed is not None:
-                mean = np.asarray(resumed["mean"], dtype=np.float32)
-                std = np.asarray(resumed["std"], dtype=np.float32)
-                if mean.shape != (train_data.shape[-1],) or std.shape != mean.shape or not np.isfinite(mean).all() or not np.isfinite(std).all() or (std <= 0).any():
-                    raise ValueError("Resume checkpoint normalization does not match the data features")
+                self.normalizer = FeatureNormalizer.from_checkpoint(resumed, train_data.shape[-1]).to(self.device)
+                print(f"Resume normalization restored: {self.normalizer.config['method']}", flush=True)
+            else:
+                self.normalizer = FeatureNormalizer.fit(train_data, self.train_cfg.get("normalization"),
+                                                       ignore_zero_padding=zero_padding).to(self.device)
+            self.train_cfg["normalization"] = deepcopy(self.normalizer.config)
+            mean, std = self.normalizer.mean, self.normalizer.std
             self.normalization_mean = torch.as_tensor(mean, device=self.device).view(1, -1, 1)
             self.normalization_std = torch.as_tensor(std, device=self.device).view(1, -1, 1)
             train_dataset = PulseArrayDataset(train_data, train_labels, mean, std, zero_padding=zero_padding, normalize=False)
@@ -168,10 +172,7 @@ class BaseTrainer:
 
     def _normalize_features(self, features):
         """Apply fixed training statistics only after the raw augmentation chain."""
-        normalized = (features.float() - self.normalization_mean) / self.normalization_std
-        if zero_padding_enabled(self.data_cfg):
-            normalized = normalized.masked_fill(features.eq(0).all(dim=1, keepdim=True), 0)
-        return normalized
+        return self.normalizer(features, zero_padding=zero_padding_enabled(self.data_cfg))
 
     def _augment_features(self, augment, features, labels, *, allow_mixup=True):
         lengths = None
@@ -415,7 +416,7 @@ class BaseTrainer:
             for key in ("num_classes", "sequence_length", "features"):
                 if key in saved_data and key in self.data_cfg and saved_data[key] != self.data_cfg[key]:
                     raise ValueError(f"Resume checkpoint data {key} does not match the current configuration")
-            if "mean" not in self.resume_checkpoint or "std" not in self.resume_checkpoint:
+            if "normalization" not in self.resume_checkpoint and ("mean" not in self.resume_checkpoint or "std" not in self.resume_checkpoint):
                 raise ValueError("Resume checkpoint must contain normalization mean/std")
         seed_everything(int(self.train_cfg.get("seed", 2026)), device=self.device)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -437,6 +438,7 @@ class BaseTrainer:
         mean, std = stats[0], stats[1]
         print(f"Train feature mean: {mean.tolist()}")
         print(f"Train feature std: {std.tolist()}")
+        print(f"Normalization: {self.normalizer.config}")
         class_counts = np.bincount(
             train_labels,
             minlength=self.num_classes,
@@ -472,7 +474,11 @@ class BaseTrainer:
         )
         augment = PulseAugment(**self.pipeline.get("augment", {}))
 
-        np.savez(self.output_dir / "normalization.npz", mean=mean, std=std)
+        normalization = self.normalizer.export_state()
+        np.savez(self.output_dir / "normalization.npz", mean=mean, std=std,
+                 method=self.normalizer.config["method"], offset=normalization["offset"], scale=normalization["scale"],
+                 state_json=json.dumps(normalization))
+        (self.output_dir / "normalization.json").write_text(json.dumps(normalization, indent=2), encoding="utf-8")
 
         history: list[dict[str, float | int]] = []
         best_macro_f1 = -1.0
@@ -516,7 +522,7 @@ class BaseTrainer:
 
         runtime = {"device": str(self.device), "accelerator": name, "validation_enabled": has_val,
                    "use_amp": use_amp_for(self.device, self.train_cfg.get("use_amp", True)),
-                   "amp_dtype": str(self.amp_dtype),
+                   "amp_dtype": str(self.amp_dtype), "normalization": deepcopy(self.normalizer.config),
                    "initial_epoch": start_epoch, "additional_epochs": additional_epochs,
                    "optimizer": type(optimizer).__name__,
                    "optimizer_initial_lr": [group["lr"] for group in optimizer.param_groups],
@@ -586,7 +592,7 @@ class BaseTrainer:
             payload = {
                 "epoch": epoch, "model_state_dict": model.state_dict(),
                 "model_cfg": self.model_cfg, "data_cfg": portable_data_cfg(self.data_cfg),
-                "mean": mean, "std": std, "active_labels": active_labels,
+                "mean": mean, "std": std, "normalization": normalization, "active_labels": active_labels,
                 "train_class_counts": class_counts, "metrics_prior_alpha": metric_prior_alpha,
                 "val_metrics": val_metrics, "optimizer_state_dict": optimizer.state_dict(),
                 "scheduler_state_dict": scheduler.state_dict(), "scaler_state_dict": scaler.state_dict(),

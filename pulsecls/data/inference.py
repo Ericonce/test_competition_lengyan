@@ -7,6 +7,7 @@ from torch.utils.data import Dataset
 
 from pulsecls.cfg import remap_repo_path
 from pulsecls.data.dataset import load_sample, zero_padding_enabled
+from pulsecls.utils.normalization import FeatureNormalizer
 from pulsecls.utils.progress import Progress
 
 
@@ -54,13 +55,15 @@ def read_labels(labels_file, paths, num_classes):
 
 class InferenceCSVDataset(Dataset):
     """Read each sequence when its batch is needed, using training normalization."""
-    def __init__(self, paths, data_cfg, mean, std):
+    def __init__(self, paths, data_cfg, mean, std, *, normalizer=None):
         self.paths, self.data_cfg = paths, data_cfg
         self.mean = np.asarray(mean, dtype=np.float32)
         self.std = np.asarray(std, dtype=np.float32)
         self.on_loaded = None
         if self.mean.shape != (len(data_cfg["features"]),) or self.std.shape != self.mean.shape or not np.isfinite(self.mean).all() or not np.isfinite(self.std).all() or (self.std <= 0).any():
             raise ValueError("Checkpoint normalization must match the feature count, with finite positive std")
+        self.normalizer = normalizer if normalizer is not None else FeatureNormalizer.from_checkpoint(
+            {"mean": self.mean, "std": self.std}, len(data_cfg["features"]))
 
     def __len__(self):
         return len(self.paths)
@@ -69,9 +72,7 @@ class InferenceCSVDataset(Dataset):
         cfg = self.data_cfg
         raw = load_sample(self.paths[index], int(cfg["sequence_length"]), cfg["features"],
                           length_policy=cfg.get("length_policy"))
-        values = (raw - self.mean) / self.std
-        if zero_padding_enabled(cfg):
-            values[np.all(raw == 0, axis=-1)] = 0
+        values = self.normalizer.transform_numpy(raw, zero_padding=zero_padding_enabled(cfg))
         if self.on_loaded is not None:
             self.on_loaded()
         return torch.from_numpy(values.T.copy()), torch.tensor(0), index
