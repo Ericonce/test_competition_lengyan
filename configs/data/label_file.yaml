@@ -1,4 +1,4 @@
-# Change root to the competition data directory, then pass this YAML as data=... .
+# Conversion input only: python tools/convert_dataset.py --data configs/data/label_file.yaml --output datasets/competition_converted
 name: competition_label_file
 root: datasets/competition  # Relative to the project checkout; an absolute path also works.
 num_classes: 100

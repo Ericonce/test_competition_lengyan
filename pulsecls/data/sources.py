@@ -1,16 +1,14 @@
-"""Selectable labeled inputs without copying sequences into class directories."""
+"""Parse external labeled layouts for conversion into ordinary class folders."""
 from __future__ import annotations
 
 import csv
 from copy import deepcopy
 from dataclasses import dataclass
-import hashlib
 import io
 import json
 from pathlib import Path
 import re
 from urllib.parse import quote
-from uuid import uuid4
 
 
 INPUT_FORMATS = ("class_folders", "label_file", "filename", "table")
@@ -65,6 +63,18 @@ def input_config(options=None):
     return cfg
 
 
+def require_class_folders(data_cfg):
+    """Training and dataset tools consume only the project's class directories."""
+    cfg = input_config(data_cfg.get("input"))
+    if cfg["format"] != "class_folders":
+        raise ValueError(
+            f"Convert {cfg['format']!r} data to class folders first with "
+            "python tools/convert_dataset.py --data <source.yaml> --output <new_directory>; "
+            "then use the generated data.yaml for training/validation."
+        )
+    return cfg
+
+
 def _inside(root, value):
     path = (root / value).resolve()
     if not path.is_relative_to(root):
@@ -98,7 +108,7 @@ def _columns(header, names, path):
 
 @dataclass(frozen=True)
 class TableSample:
-    """One logical sequence, located by CSV byte spans rather than a new file."""
+    """Conversion-only view of one complete sequence in a source table."""
     source: Path
     sample_id: str
     spans: tuple[tuple[int, int], ...]
@@ -109,17 +119,8 @@ class TableSample:
     def __str__(self):
         return f"{self.source}#sample={quote(self.sample_id, safe='')}"
 
-    def __fspath__(self):
-        return str(self)
-
     def relative_to(self, root):
         return Path(f"{self.source.relative_to(root)}#sample={quote(self.sample_id, safe='')}")
-
-    def is_relative_to(self, root):
-        return self.source.is_relative_to(root)
-
-    def stat(self):
-        return self.source.stat()
 
     def read_rows(self):
         rows = []
@@ -218,45 +219,3 @@ def _flat_records(root, files, cfg, num_classes, labels_path):
     if set(labels) != names:
         raise ValueError(f"Label/file mismatch: missing={sorted(names-set(labels))[:5]}, extra={sorted(set(labels)-names)[:5]}")
     return [{"path": p.relative_to(root).as_posix(), "label": labels[p.name]} for p in paths]
-
-
-def load_source_inventory(root, data_cfg):
-    """Cache an inventory; table contents are scanned once, sample reads use seeks."""
-    root = Path(root).resolve()
-    cfg = input_config(data_cfg.get("input"))
-    table = cfg["format"] == "table"
-    source = _inside(root, cfg["table_file"] if table else cfg["files"])
-    labels_path = _inside(root, cfg["labels_file"]) if cfg["format"] == "label_file" else None
-    sources = [source] + ([labels_path] if labels_path is not None else [])
-    cache_dir = root / ".pulsecls_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    stamps = [[str(p), p.stat().st_mtime_ns, p.stat().st_size] for p in sources]
-    signature = hashlib.sha256(json.dumps([cfg, data_cfg.get("num_classes"), stamps], sort_keys=True).encode()).hexdigest()
-    cache = cache_dir / f"input_index_{cfg['format']}_{hashlib.sha256(json.dumps(cfg,sort_keys=True).encode()).hexdigest()[:12]}.json"
-    if cache.exists():
-        try:
-            saved = json.loads(cache.read_text(encoding="utf-8"))
-            if saved.get("version") == 1 and saved.get("fingerprint") == signature:
-                return saved["classes"], signature, f"cached {cfg['format']} index"
-        except (OSError, ValueError):
-            pass
-    rows = _table_records(source, cfg, data_cfg.get("num_classes")) if table else _flat_records(
-        root, source, cfg, data_cfg.get("num_classes"), labels_path)
-    if not rows:
-        raise ValueError(f"No labeled samples found in {source}")
-    grouped = {}
-    for row in rows:
-        grouped.setdefault(row["label"], []).append(row)
-    groups = [{"label": label, "directory": str(root), "count": len(records), "records": records,
-               **({"table": source.relative_to(root).as_posix(), "delimiter": cfg["delimiter"],
-                   "encoding": cfg["encoding"], "order_column": cfg["order_column"]} if table else {})}
-              for label, records in sorted(grouped.items())]
-    if stamps != [[str(p), p.stat().st_mtime_ns, p.stat().st_size] for p in sources]:
-        raise ValueError("Input files changed while building the index; finish preparing the data and retry")
-    temporary = cache.with_name(f".{cache.stem}.{uuid4().hex}.tmp")
-    try:
-        temporary.write_text(json.dumps({"version": 1, "fingerprint": signature, "classes": groups}), encoding="utf-8")
-        temporary.replace(cache)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return groups, signature, f"{cfg['format']} index"

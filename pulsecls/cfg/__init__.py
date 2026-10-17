@@ -346,8 +346,8 @@ def get_cfg(
         root_base = Path(pipeline["data_path"]).parent if pipeline["data_cfg"].get("root_relative_to_yaml", False) and pipeline.get("data_path") else None
         pipeline["data_cfg"]["root"] = str(remap_repo_path(pipeline["data_cfg"]["root"], root_base))
     if "input" in pipeline["data_cfg"]:
-        from pulsecls.data.sources import input_config
-        pipeline["data_cfg"]["input"] = input_config(pipeline["data_cfg"]["input"])
+        from pulsecls.data.sources import require_class_folders
+        pipeline["data_cfg"]["input"] = require_class_folders(pipeline["data_cfg"])
     pipeline["task"] = normalize_task(pipeline.get("task"))
     return pipeline
 

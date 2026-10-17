@@ -1,53 +1,70 @@
-# 选择比赛数据的组织方式
+# 比赛数据先转换为类别文件夹，再训练
 
-训练和划分验证支持四种输入：原有 `class_folders`（类别文件夹），以及 `label_file`（平铺 CSV 加标签表）、`filename`（文件名包含类别）、`table`（大表包含多个样本）。三种新方式直接引用原始数据，不复制或重命名样本；大表按样本编号建立字节位置索引，不拆成几十万个小文件。
+训练和验证统一使用现有类别文件夹：`0/*.csv`、`1/*.csv`……，每个 CSV 是一条完整的脉冲序列。主办方提供其他组织方式时，先运行转换工具；三份 `configs/data/*.yaml` 模板仅用于描述转换前的数据。
 
-## 选择方式
+## 1. 选择转换命令
 
-修改任意现有训练入口的 `model.train(...)`，指定数据描述和输入选项：
+先修改对应模板的 `root`，指向原始数据目录，再在仓库根目录执行下面对应的一条命令。`--output` 指定新的输出目录，可直接修改路径。
+
+平铺 CSV，标签单独保存：
+
+```shell
+python tools/convert_dataset.py --data configs/data/label_file.yaml --output datasets/competition_converted
+```
+
+类别写在文件名里：
+
+```shell
+python tools/convert_dataset.py --data configs/data/filename.yaml --output datasets/competition_converted
+```
+
+多个样本合在一张大表里：
+
+```shell
+python tools/convert_dataset.py --data configs/data/table.yaml --output datasets/competition_converted
+```
+
+三种方式都会实际生成：
+
+```text
+datasets/competition_converted/
+  data.yaml
+  conversion_manifest.csv
+  conversion_summary.json
+  0/
+    ...csv
+  1/
+    ...csv
+  ...
+```
+
+原始文件保留。平铺样本按标签复制到对应类别目录，保留文件名和原文件字节；大表按完整样本拆成 `类别/0.csv`、`类别/1.csv` 等文件。输出目录必须尚不存在，并与原始数据目录分开；再次转换时换一个新的输出目录。转换失败会清理本次临时输出，修正源数据后可重新运行。
+
+## 2. 训练时只指向转换后的 data.yaml
+
+修改现有训练入口中的参数：
 
 ```python
 model.train(
-    # 其他模型、设备等参数沿用原入口。
-    data="你的数据目录/data.yaml",
+    # 原入口的 pipeline、模型、设备等参数继续保留。
+    data="datasets/competition_converted/data.yaml",
     num_classes=100,
-    data_input={"format": "label_file", "labels_file": "labels.csv"},
     dataset={"sample_ratio": 1.0, "train_ratio": 0.8, "val_ratio": 0.2,
              "seed": 2026, "stratified": True},
 )
 ```
 
-数据描述的共同部分如下；`root` 是原始文件所在的数据根目录：
+删除旧调用中的 `data_input={...}`。训练时传入转换前的模板或旧的非类别目录选项，会提示先转换。已有类别目录数据可继续直接训练。
 
-```yaml
-name: competition
-root: .
-root_relative_to_yaml: true
-num_classes: 100
-features: [CF_MHz, PW_us, PRI_us]
-cache: true
-input:
-  format: label_file
-  labels_file: labels.csv
-```
+转换只整理文件和标签，保留完整样本、脉冲顺序及原始物理值。采样、训练/验证划分、裁剪/补长、归一化沿用原来的训练流程。很多现有入口显式设置了 `sample_ratio=0.01`；需要全部数据时改成 `1.0`。
 
-`input` 放在 `data.yaml` 中。代码中的 `data_input={...}` 会整体替换这组输入选项；未提供该参数时使用数据 YAML。也支持 `data_cfg={"input": {...}}` 和 `**{"data_cfg.input.format": "filename"}`。省略 `input` 时保留原有类别文件夹读取。恢复原模式可传入 `data_input="class_folders"`。
+## 3. 三种原始数据如何配置
 
-仓库提供三个可编辑模板：`configs/data/label_file.yaml`、`configs/data/filename.yaml`、`configs/data/table.yaml`。先修改模板的 `root` 和对应字段，再把训练入口的 `data` 指向模板即可。其他参数继续受入口中显式参数控制，例如当前大多数入口的 `sample_ratio=0.01`；需要使用全部数据时改成 `1.0`。
+模板中的 `root` 默认相对于仓库，也可填写绝对路径。自己把描述 YAML 放进原始数据目录时，可用 `root: .` 和 `root_relative_to_yaml: true`。其他输入路径都相对于 `root`，必须位于其中。
 
-## 平铺 CSV 加标签表：label_file
+### 平铺 CSV 加标签表
 
-目录示例：
-
-```text
-competition/
-  data.yaml
-  a.csv
-  b.csv
-  labels.csv
-```
-
-每个 CSV 是一个脉冲序列，仍使用 CF/PW/PRI 特征列。`labels.csv` 示例：
+每个样本 CSV 保持原有 CF/PW/PRI 特征列。`labels.csv` 示例：
 
 ```csv
 filename,label
@@ -55,45 +72,25 @@ a.csv,17
 b.csv,42
 ```
 
-选择：
+编辑 `configs/data/label_file.yaml`：`labels_file` 指定标签文件，`files` 指定样本目录（默认 `.`）。标签中的文件名保持 `a.csv` 形式。`filename_column`、`label_column` 指定标签表的列名；顺序任意，但文件与标签必须一一对应，重复、缺失或多余标签会报错。
 
-```python
-data_input={
-    "format": "label_file",
-    "files": ".",
-    "labels_file": "labels.csv",
-    "filename_column": "filename",
-    "label_column": "label",
-}
+支持 TSV（`delimiter: "\t"`）和无表头的两列 TXT（`header: false`、`delimiter: whitespace`），TXT 每行为 `a.csv 17`。有空格的文件名请使用 CSV/TSV 标签表。这里的分隔符和编码描述标签表；独立样本 CSV 沿用现有逗号分隔、UTF-8 编码。
+
+### 类别写在文件名里
+
+例如 `class17_sample002.csv`，编辑 `configs/data/filename.yaml`：
+
+```yaml
+input:
+  format: filename
+  filename_regex: 'class(?P<label>\d+)_.*\.csv'
 ```
 
-`files` 和 `labels_file` 相对于数据根目录。CSV 放在 `sequences/` 时，设 `files="sequences"`；标签中的文件名保持 `a.csv` 形式。标签按文件名匹配，行顺序任意。所选 CSV 与标签须逐一对应，重复、缺失、多余文件名会报错；同目录的标签 CSV 自动排除。
+命名组 `(?P<label>...)` 提取类别；正则必须完整匹配文件名。文件为 `17_002.csv` 时改成 `'(?P<label>\d+)_\d+\.csv'`。`files` 指定平铺样本目录，`pattern` 默认 `*.csv`。无法匹配的文件会报错。
 
-支持 TSV 或无表头 TXT。例如 `labels.txt` 的每行是 `a.csv 17`：
+### 多个样本合在大表中
 
-```python
-data_input={"format": "label_file", "labels_file": "labels.txt",
-            "header": False, "delimiter": "whitespace"}
-```
-
-TSV 使用 `delimiter="\t"`。有表头时通过 `filename_column`、`label_column` 指定列名；无表头时严格采用“文件名、标签”两列。CSV 文件名可包含空格，有这类名称时使用 CSV/TSV 标签表。
-
-## 类别写在文件名中：filename
-
-例如 `class17_sample002.csv`、`class42_sample003.csv`：
-
-```python
-data_input={"format": "filename",
-            "filename_regex": r"class(?P<label>\d+)_sample\d+\.csv"}
-```
-
-`filename_regex` 必须完整匹配文件名，使用命名组 `(?P<label>...)` 指出类别部分。默认规则是 `r"class(?P<label>\d+)_.*\.csv"`。例如名称为 `17_002.csv` 时，使用 `r"(?P<label>\d+)_\d+\.csv"`。读取器只使用明确提供的规则；无法匹配的文件会报错。
-
-`files` 默认 `.`；`pattern` 默认 `*.csv`，可改为 `sample_*.csv` 等，以选择该平铺目录里的样本。`pattern` 使用文件名通配符，`filename_regex` 使用正则表达式，两者含义不同。
-
-## 多个样本合在大表中：table
-
-每行一个脉冲，样本 ID 标识整条序列：
+目前支持每行一个脉冲、有明确样本 ID 的 CSV/TSV 长表：
 
 ```csv
 sample_id,label,pulse_index,CF_MHz,PW_us,PRI_us
@@ -103,35 +100,33 @@ b,42,0,4000,10,600
 b,42,1,4001,10.1,601
 ```
 
-```python
-data_input={"format": "table", "table_file": "samples.csv",
-            "sample_id_columns": ["sample_id"], "label_column": "label",
-            "order_column": "pulse_index"}
+编辑 `configs/data/table.yaml`：
+
+```yaml
+input:
+  format: table
+  table_file: samples.csv
+  sample_id_columns: [sample_id]
+  label_column: label
+  order_column: pulse_index
 ```
 
-- 同一个样本的行可以交错分布，也可以连续排列。
-- `order_column=None` 时，每条序列保持其在文件中的出现顺序。指定该列时，按其数值升序排列；同一序列的序号须为互不重复的有限数值。
-- 每个样本 ID 对应一个固定类别。若不同类别复用了样本编号，使用 `sample_id_columns=["label", "sample_id"]` 等复合编号；未明确配置的标签冲突会报错。
-- 特征列通过 `data.yaml` 的 `features` 选择，支持已有英文/中文列名别名；标签、样本编号和脉冲序号不会进入模型输入。
-- 表格需要表头，支持 CSV 和 TSV（`delimiter="\t"`）。文本编码默认 `utf-8-sig`，可通过 `encoding` 指定，例如 `gb18030`。
-- 第一遍扫描整张表，建立每个样本的行位置索引；后续只定位读取选中的序列。索引只保留 ID、标签和位置，不把整张特征大表载入内存。连续存放每个样本的全部行，通常比大量交错存放更节省索引空间。
-- 输出清单中的 `samples.csv#sample=...` 是包含转义 ID 的样本标识，可区分同一大表里的不同序列。
+- 同一样本的行可以交错。指定 `order_column` 时，按其数值升序整理脉冲；留空时保留文件中的出现顺序。
+- 类别间复用样本编号时，用 `sample_id_columns: [label, sample_id]`。同一样本存在冲突标签、空编号或重复脉冲序号会报错。
+- 每个样本导出一个 CSV，只写 `features` 指定的特征列，支持原有中文/英文列名别名。标签和样本 ID 写入转换清单，不进入训练特征。
+- 表格需要表头；`delimiter: "\t"` 支持 TSV，`encoding: gb18030` 等可指定源表编码。
+- 根据明确的样本 ID 拆分，不会按固定行数切段。其他大表布局（如每行是一条展开序列、没有样本编号）需要先按实际字段整理成上述长表。
 
-表格必须提供明确的样本边界。每行已经代表一条展开序列、多个样本共用一个单元格、只有脉冲而无样本编号等其他布局，需要先转换为上述逐脉冲长表格式。不要按 256 行自动切段，以免跨样本拼接。
+## 4. 类别编号与转换核验
 
-## 类别编号、划分、缓存和推理
+默认类别编号为 `0～num_classes-1`。原始标签为 `1～100` 时，在对应模板的 `input` 中设置 `label_offset: -1`。文本类别可设置：
 
-默认标签为 `0～num_classes-1`。主办方使用 `1～100` 时设 `label_offset=-1`；使用文本类别名时配置：
-
-```python
-data_input={"format": "label_file", "labels_file": "labels.csv",
-            "label_map": {"radar_A": 0, "radar_B": 1}}
+```yaml
+label_map: {radar_A: 0, radar_B: 1}
 ```
 
-配置 `label_map` 后，映射值就是最终类别编号，`label_offset` 不再叠加。映射必须明确覆盖输入类别；训练配置和权重保存这份映射。模型预测仍输出映射后的整数，提交时按主办方要求转换编号。不会根据类别出现顺序临时推断映射。
+`label_map` 的值就是最终目录编号，不再叠加偏移。转换摘要保存原始配置及映射，提交预测时可据此恢复官方类别编号。
 
-三种新模式都作为有标签的总数据池，继续按 `dataset.sample_ratio/train_ratio/val_ratio/seed/stratified` 采样和划分；划分单位为完整样本，训练和验证不共享样本。它们不读取标签表中的 `split` 列；若主办方已有官方划分，应明确配置并保留对应边界，避免直接把官方训练/验证合为这里的总池。大表模式也支持 `tools/visualize_dataset.py` 使用原始序列绘图。
+`conversion_manifest.csv` 记录每条原始样本、目标类别、输出文件及脉冲数；`conversion_summary.json` 记录总样本数和各类别数量。工具用训练读取器逐个核验输出 CSV，拒绝空序列、缺少特征、非数字或 NaN/Inf 数据。转换后的数据目录可以整体移动，训练无需依赖原始标签表或大表。
 
-输入索引和加载后的数组缓存位于数据根目录 `.pulsecls_cache/`。修改标签表、文件名规则、映射、数据文件或相关读取配置后，会重新建立对应索引/数组缓存。数组仍保留原始物理值；采样完成后沿用现有裁剪/补长、训练集拟合归一化、按批训练等流程。`dataset_selection.json` 记录输入选项、样本标识和实际训练/验证清单。
-
-使用同一数据配置执行 `model.val(...)`，可以评估划分出的验证集。已有“独立 CSV 测试文件夹”推理方式保持可用；这些 `data_input` 选项用于训练/划分验证，不会把独立测试文件夹中的标签文件当成训练输入。推理归一化仍使用权重保存的参数。
+每次转换处理一个有标签数据池。主办方给出了官方训练/验证划分时，应分别转换并保留各自边界，再沿用项目已有的显式 train/val 目录或清单配置；不要混合成总池重新随机划分。独立无标签测试集继续使用现有文件夹推理入口，无需转换成有标签类别目录。

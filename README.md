@@ -4,6 +4,8 @@
 
 **参加比赛时使用主办方提供的数据，直接修改现有 train/infer 入口的参数即可。** 不需要复制 pipeline、模型 YAML 或另建训练入口，也不需要运行合成数据生成器。现有路径中的 `_synthetic` 是历史命名，不限制模型只能使用合成数据；`model.train(data=...)` 指向哪里，就读取哪个数据集。
 
+训练数据统一按类别分文件夹；标签表、文件名标签或大表数据先用 [转换工具](docs/DATA_INPUT_FORMATS.md) 整理，再将 `data` 指向转换后的 `data.yaml`。
+
 ## 1. 项目结构：各部分负责什么
 
 ```text
@@ -472,7 +474,7 @@ python tools/generate_synthetic_radar_test.py
 - [完整中文文档目录](docs/README.md)
 - [项目结构与模型组装](docs/PROJECT_STRUCTURE.md)
 - [新数据集接入与 data.yaml 字段](docs/NEW_DATASET_GUIDE.md)
-- [选择数据组织方式：类别目录、标签表、文件名、大表](docs/DATA_INPUT_FORMATS.md)
+- [将标签表、文件名标签、大表转换为类别目录后训练](docs/DATA_INPUT_FORMATS.md)
 - [训练参数与配置覆盖](docs/TRAIN_CONFIGURATION.md)
 - [采样与训练/验证划分](docs/DATASET_SELECTION.md)
 - [训练输出文件、指标与图片](docs/TRAINING_OUTPUTS.md)

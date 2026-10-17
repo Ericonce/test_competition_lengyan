@@ -12,7 +12,7 @@ import torch
 from torch.utils.data import BatchSampler, Dataset, WeightedRandomSampler
 
 from pulsecls.cfg import normalize_dataset_path, remap_repo_path
-from pulsecls.data.sources import TableSample, input_config
+from pulsecls.data.sources import input_config, require_class_folders
 from pulsecls.utils.progress import Progress
 
 
@@ -102,35 +102,31 @@ def validate_label_range(labels, num_classes, context):
         )
 
 
-def read_sequence_csv(csv_path: Path,
-                      features: list[str] | tuple[str, ...] = DEFAULT_FEATURES) -> np.ndarray:
-    """Read raw feature columns, preserving sequence length and physical units."""
-    table_sample = isinstance(csv_path, TableSample)
-    if not table_sample:
-        csv_path = Path(csv_path)
+def feature_column_indices(header, features, csv_path):
+    """Resolve the same column aliases for conversion and training."""
     aliases = {"CF_MHz": ("CF_MHz", "载频(MHz)"), "PW_us": ("PW_us", "脉宽(us)"),
                "PRI_us": ("PRI_us", "脉冲重复周期(us)", "PRI"),
                "脉冲到达时间": ("脉冲到达时间", "脉冲到达时间(ms)", "TOA"),
                "脉冲到达时间(ms)": ("脉冲到达时间(ms)", "脉冲到达时间", "TOA")}
-    def select_columns(header):
-        if header is None:
-            raise ValueError(f"{csv_path} is an empty CSV")
-        indices = []
-        for feature in features:
-            match = next((name for name in aliases.get(feature, (feature,)) if name in header), None)
-            if match is None:
-                raise ValueError(f"{csv_path} missing feature {feature!r}; columns: {header}. "
-                                 "Expected CF/PW/PRI columns for three-channel inputs.")
-            indices.append(header.index(match))
-        return indices
-    if table_sample:
-        header, rows = csv_path.read_rows()
-        indices = select_columns(header)
-        sample = np.asarray([[row[i] for i in indices] for row in rows], dtype=np.float64)
-    else:
-        with csv_path.open(encoding="utf-8-sig", newline="") as stream:
-            indices = select_columns(next(csv.reader(stream), None))
-            sample = np.loadtxt(stream, delimiter=",", usecols=tuple(indices), dtype=np.float64, ndmin=2)
+    if header is None:
+        raise ValueError(f"{csv_path} is an empty CSV")
+    indices = []
+    for feature in features:
+        match = next((name for name in aliases.get(feature, (feature,)) if name in header), None)
+        if match is None:
+            raise ValueError(f"{csv_path} missing feature {feature!r}; columns: {header}. "
+                             "Expected CF/PW/PRI columns for three-channel inputs.")
+        indices.append(header.index(match))
+    return indices
+
+
+def read_sequence_csv(csv_path: Path,
+                      features: list[str] | tuple[str, ...] = DEFAULT_FEATURES) -> np.ndarray:
+    """Read raw feature columns, preserving sequence length and physical units."""
+    csv_path = Path(csv_path)
+    with csv_path.open(encoding="utf-8-sig", newline="") as stream:
+        indices = feature_column_indices(next(csv.reader(stream), None), features, csv_path)
+        sample = np.loadtxt(stream, delimiter=",", usecols=tuple(indices), dtype=np.float64, ndmin=2)
     sample = np.asarray(sample, dtype=np.float64)
     if sample.ndim != 2 or sample.shape[1] != len(features) or not len(sample):
         raise ValueError(
@@ -162,6 +158,7 @@ def load_split_arrays(
     split_key: str,
     *, selection_plan: tuple | None = None,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    require_class_folders(data_cfg)
     root = remap_repo_path(data_cfg["root"])
     selection_info = None
     if "selection" in data_cfg:
@@ -175,8 +172,6 @@ def load_split_arrays(
             raise ValueError("Selection plan does not match the current data input format/options")
         records = partitions[split_key]
         split_name = f"pipeline:{split_key}"
-    elif input_config(data_cfg.get("input"))["format"] != "class_folders":
-        raise ValueError("Selectable data input requires dataset sampling settings; use model.train(dataset={...})")
     else:
         split_name = normalize_dataset_path(data_cfg[split_key])
         records = None

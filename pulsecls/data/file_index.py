@@ -23,9 +23,8 @@ def _stamp(path):
 
 def load_inventory(root, data_cfg):
     """Do not open sequence CSVs. Numbered synthetic files need no enumeration."""
-    from pulsecls.data.sources import input_config, load_source_inventory
-    if input_config(data_cfg.get("input"))["format"] != "class_folders":
-        return load_source_inventory(root, data_cfg)
+    from pulsecls.data.sources import require_class_folders
+    require_class_folders(data_cfg)
     root = Path(root).resolve()
     explicit = data_cfg.get("all")
     direct = _class_dirs(root)
@@ -118,14 +117,6 @@ def record_at(groups, index):
     """Materialize a path only after its integer index has been sampled."""
     for group in groups:
         if index < group["count"]:
-            if "records" in group:
-                row = group["records"][index]
-                if "table" in group:
-                    from pulsecls.data.sources import TableSample
-                    return TableSample(Path(group["directory"]) / group["table"], row["id"],
-                                       tuple(tuple(span) for span in row["spans"]), group["delimiter"],
-                                       group["encoding"], group["order_column"]), group["label"]
-                return Path(group["directory"]) / row["path"], group["label"]
             name = f"{index}.csv" if group["names"] is None else group["names"][index]
             return Path(group["directory"]) / name, group["label"]
         index -= group["count"]

@@ -1,3 +1,4 @@
+# Conversion input only: python tools/convert_dataset.py --data configs/data/table.yaml --output datasets/competition_converted
 name: competition_table
 root: datasets/competition  # Relative to the project checkout; an absolute path also works.
 num_classes: 100
