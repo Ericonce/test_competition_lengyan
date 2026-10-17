@@ -1,0 +1,14 @@
+name: competition_table
+root: datasets/competition  # Relative to the project checkout; an absolute path also works.
+num_classes: 100
+features: [CF_MHz, PW_us, PRI_us]
+cache: true
+input:
+  format: table
+  table_file: samples.csv
+  sample_id_columns: [sample_id]
+  label_column: label
+  order_column: null
+  delimiter: ','
+  encoding: utf-8-sig
+  label_offset: 0

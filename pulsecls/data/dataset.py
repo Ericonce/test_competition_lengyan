@@ -12,6 +12,7 @@ import torch
 from torch.utils.data import BatchSampler, Dataset, WeightedRandomSampler
 
 from pulsecls.cfg import normalize_dataset_path, remap_repo_path
+from pulsecls.data.sources import TableSample, input_config
 from pulsecls.utils.progress import Progress
 
 
@@ -104,13 +105,14 @@ def validate_label_range(labels, num_classes, context):
 def read_sequence_csv(csv_path: Path,
                       features: list[str] | tuple[str, ...] = DEFAULT_FEATURES) -> np.ndarray:
     """Read raw feature columns, preserving sequence length and physical units."""
-    csv_path = Path(csv_path)
+    table_sample = isinstance(csv_path, TableSample)
+    if not table_sample:
+        csv_path = Path(csv_path)
     aliases = {"CF_MHz": ("CF_MHz", "载频(MHz)"), "PW_us": ("PW_us", "脉宽(us)"),
                "PRI_us": ("PRI_us", "脉冲重复周期(us)", "PRI"),
                "脉冲到达时间": ("脉冲到达时间", "脉冲到达时间(ms)", "TOA"),
                "脉冲到达时间(ms)": ("脉冲到达时间(ms)", "脉冲到达时间", "TOA")}
-    with csv_path.open(encoding="utf-8-sig", newline="") as stream:
-        header = next(csv.reader(stream), None)
+    def select_columns(header):
         if header is None:
             raise ValueError(f"{csv_path} is an empty CSV")
         indices = []
@@ -120,7 +122,15 @@ def read_sequence_csv(csv_path: Path,
                 raise ValueError(f"{csv_path} missing feature {feature!r}; columns: {header}. "
                                  "Expected CF/PW/PRI columns for three-channel inputs.")
             indices.append(header.index(match))
-        sample = np.loadtxt(stream, delimiter=",", usecols=tuple(indices), dtype=np.float64, ndmin=2)
+        return indices
+    if table_sample:
+        header, rows = csv_path.read_rows()
+        indices = select_columns(header)
+        sample = np.asarray([[row[i] for i in indices] for row in rows], dtype=np.float64)
+    else:
+        with csv_path.open(encoding="utf-8-sig", newline="") as stream:
+            indices = select_columns(next(csv.reader(stream), None))
+            sample = np.loadtxt(stream, delimiter=",", usecols=tuple(indices), dtype=np.float64, ndmin=2)
     sample = np.asarray(sample, dtype=np.float64)
     if sample.ndim != 2 or sample.shape[1] != len(features) or not len(sample):
         raise ValueError(
@@ -161,8 +171,12 @@ def load_split_arrays(
         partitions, selection_info = selection_plan if selection_plan is not None else select_records(data_cfg)
         if selection_info["settings"] != selection_config(data_cfg["selection"]) or selection_info.get("data_root") != str(root):
             raise ValueError("Selection plan does not match the current dataset/settings")
+        if selection_info.get("input", input_config()) != input_config(data_cfg.get("input")):
+            raise ValueError("Selection plan does not match the current data input format/options")
         records = partitions[split_key]
         split_name = f"pipeline:{split_key}"
+    elif input_config(data_cfg.get("input"))["format"] != "class_folders":
+        raise ValueError("Selectable data input requires dataset sampling settings; use model.train(dataset={...})")
     else:
         split_name = normalize_dataset_path(data_cfg[split_key])
         records = None

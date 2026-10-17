@@ -1,0 +1,15 @@
+# Change root to the competition data directory, then pass this YAML as data=... .
+name: competition_label_file
+root: datasets/competition  # Relative to the project checkout; an absolute path also works.
+num_classes: 100
+features: [CF_MHz, PW_us, PRI_us]
+cache: true
+input:
+  format: label_file
+  files: .
+  labels_file: labels.csv
+  filename_column: filename
+  label_column: label
+  delimiter: ','
+  header: true
+  label_offset: 0

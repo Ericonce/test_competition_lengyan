@@ -8,6 +8,7 @@ import numpy as np
 
 from pulsecls.cfg import remap_repo_path
 from pulsecls.data.file_index import load_inventory, record_at
+from pulsecls.data.sources import TableSample, input_config
 from pulsecls.utils.progress import Progress
 
 DEFAULT_SELECTION = {"sample_ratio": 1.0, "train_ratio": .8, "val_ratio": .2,
@@ -111,15 +112,22 @@ def select_records(data_cfg):
             val = [sampled[i] for i in order[train_count:]]
     source_digest = hashlib.sha256()
     source_digest.update(inventory_fingerprint.encode())
+    table_stats = {}
     with Progress("Check sampled files", len(sampled), unit="file", enabled=data_cfg.get("progress", True)) as progress:
         for path, label in sampled:
             try:
-                stat = path.stat()
+                if isinstance(path, TableSample):
+                    if path.source not in table_stats:
+                        table_stats[path.source] = path.stat()
+                    stat = table_stats[path.source]
+                else:
+                    stat = path.stat()
             except FileNotFoundError as error:
                 raise FileNotFoundError(f"Selected CSV is missing: {path}; finish regenerating the dataset before training") from error
             source_digest.update(f"{path.relative_to(root).as_posix()}:{label}:{stat.st_size}:{stat.st_mtime_ns}\n".encode())
             progress.update()
-    info = {"settings": cfg, "total_count": total_count, "sampled_count": sample_count,
+    info = {"settings": cfg, "input": input_config(data_cfg.get("input")),
+            "total_count": total_count, "sampled_count": sample_count,
             "train_count": len(train), "val_count": len(val),
             "source_fingerprint": source_digest.hexdigest(), "index_source": index_source,
             "algorithm_version": 2, "data_root": str(root),

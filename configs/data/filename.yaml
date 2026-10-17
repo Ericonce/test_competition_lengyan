@@ -1,0 +1,11 @@
+name: competition_filename
+root: datasets/competition  # Relative to the project checkout; an absolute path also works.
+num_classes: 100
+features: [CF_MHz, PW_us, PRI_us]
+cache: true
+input:
+  format: filename
+  files: .
+  pattern: '*.csv'
+  filename_regex: 'class(?P<label>\d+)_.*\.csv'
+  label_offset: 0

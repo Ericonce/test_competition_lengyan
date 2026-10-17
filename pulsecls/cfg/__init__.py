@@ -313,6 +313,9 @@ def get_cfg(
             continue  # Optional CLI values must not override YAML defaults.
         if key in {"sequence_length", "length_policy"}:
             pipeline["data_cfg"][key] = deepcopy(value)
+        elif key == "data_input":
+            from pulsecls.data.sources import input_config
+            pipeline["data_cfg"]["input"] = input_config(value)
         elif key == "labelsmooth":
             pipeline.setdefault("loss", {}).setdefault("ce", {})["label_smoothing"] = validate_label_smoothing(value)
         elif key in train_keys:
@@ -342,6 +345,9 @@ def get_cfg(
     if pipeline["data_cfg"].get("root"):
         root_base = Path(pipeline["data_path"]).parent if pipeline["data_cfg"].get("root_relative_to_yaml", False) and pipeline.get("data_path") else None
         pipeline["data_cfg"]["root"] = str(remap_repo_path(pipeline["data_cfg"]["root"], root_base))
+    if "input" in pipeline["data_cfg"]:
+        from pulsecls.data.sources import input_config
+        pipeline["data_cfg"]["input"] = input_config(pipeline["data_cfg"]["input"])
     pipeline["task"] = normalize_task(pipeline.get("task"))
     return pipeline
 

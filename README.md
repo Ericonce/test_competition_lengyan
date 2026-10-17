@@ -472,6 +472,7 @@ python tools/generate_synthetic_radar_test.py
 - [完整中文文档目录](docs/README.md)
 - [项目结构与模型组装](docs/PROJECT_STRUCTURE.md)
 - [新数据集接入与 data.yaml 字段](docs/NEW_DATASET_GUIDE.md)
+- [选择数据组织方式：类别目录、标签表、文件名、大表](docs/DATA_INPUT_FORMATS.md)
 - [训练参数与配置覆盖](docs/TRAIN_CONFIGURATION.md)
 - [采样与训练/验证划分](docs/DATASET_SELECTION.md)
 - [训练输出文件、指标与图片](docs/TRAINING_OUTPUTS.md)
