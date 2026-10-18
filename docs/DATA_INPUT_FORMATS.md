@@ -130,3 +130,21 @@ label_map: {radar_A: 0, radar_B: 1}
 `conversion_manifest.csv` 记录每条原始样本、目标类别、输出文件及脉冲数；`conversion_summary.json` 记录总样本数和各类别数量。工具用训练读取器逐个核验输出 CSV，拒绝空序列、缺少特征、非数字或 NaN/Inf 数据。转换后的数据目录可以整体移动，训练无需依赖原始标签表或大表。
 
 每次转换处理一个有标签数据池。主办方给出了官方训练/验证划分时，应分别转换并保留各自边界，再沿用项目已有的显式 train/val 目录或清单配置；不要混合成总池重新随机划分。独立无标签测试集继续使用现有文件夹推理入口，无需转换成有标签类别目录。
+
+## 5. 将长短不一的 CSV 切成固定长度
+
+在仓库根目录执行。训练数据先整理为类别文件夹，测试数据使用平铺 CSV 文件夹：
+
+```shell
+python tools/slice_csv.py --source datasets/competition_radar --output datasets/competition_sliced --length 256 --overlap 0.5
+python tools/slice_csv.py --source datasets/competition_radar_test --output datasets/competition_test_sliced --length 256 --overlap 0.5
+```
+
+- `--length`：每片脉冲数；`--overlap`：重叠比例，`0` 无重叠，`0.5` 重叠 50%。步长为 `length - int(length * overlap)`。
+- 从第 0 行开始按步长滑动，覆盖到文件末尾即停止。短 CSV 和不足一片的尾段默认补零；加 `--short repeat` 改为循环重复补长。
+- 保留原始数值、脉冲顺序和类别目录，不做归一化。输出必须是原目录之外的新目录，原文件不变。
+- 每片命名为 `原文件名__slice000000.csv`。`_slicing/manifest.csv` 记录 `slice_csv`、`source_csv`、切片序号、起止行、有效长度、原长度和类别；行号从 0 开始、不含表头，终止行不包含在切片内。
+
+训练入口改为 `data="datasets/competition_sliced/data.yaml"`、`sequence_length=256`；需要全量数据时设 `dataset.sample_ratio=1.0`。采样与训练/验证划分自动以**原 CSV** 为单位，同一个原 CSV 的所有切片进入同一组；比例按原文件数计算，切片数量比例可能不同。划分记录保存在训练结果的 `dataset_selection.json` 中。
+
+测试入口改为 `source="datasets/competition_test_sliced"`，输入长度与训练一致。预测 CSV 中的 `filename` 对应清单的 `slice_csv`；按 `source_csv` 分组即可找到同一原样本的全部切片，供后续投票。当前预测仍是一片一行，尚未自动合并成原 CSV 的最终预测；不要把切片行直接作为官方原样本结果提交。

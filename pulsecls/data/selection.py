@@ -63,13 +63,36 @@ def _allocate(capacity, budget, rng, minimum=0):
     return counts
 
 
+def _group_slices(inventory):
+    """Sample original CSVs as units, then expand each unit to all its slices."""
+    grouped, members = [], {}
+    for group in inventory:
+        sources = {}
+        for name in group["names"]:
+            source, separator, index = name.rpartition("__slice")
+            if not separator or not index.removesuffix(".csv").isdecimal():
+                raise ValueError(f"Invalid sliced filename: {name}; regenerate with tools/slice_csv.py")
+            sources.setdefault(source, []).append(name)
+        names = []
+        for slices in sources.values():
+            first = Path(group["directory"]) / slices[0]
+            names.append(slices[0])
+            members[first] = slices
+        grouped.append({**group, "count": len(names), "names": names})
+    return grouped, members
+
+
 def select_records(data_cfg):
     cfg = selection_config(data_cfg["selection"])
     root = remap_repo_path(data_cfg["root"])
     with Progress("Read dataset index", unit="steps", enabled=data_cfg.get("progress", True)):
         inventory, inventory_fingerprint, index_source = load_inventory(root, data_cfg)
     total_count = sum(group["count"] for group in inventory)
-    sample_count = int(np.floor(total_count * cfg["sample_ratio"] + 1e-9))
+    slice_groups = None
+    if data_cfg.get("slicing", {}).get("group_by_source", False):
+        inventory, slice_groups = _group_slices(inventory)
+    unit_count = sum(group["count"] for group in inventory)
+    sample_count = int(np.floor(unit_count * cfg["sample_ratio"] + 1e-9))
     if sample_count == 0:
         raise ValueError("dataset.sample_ratio selects zero sequences; increase it")
     with Progress("Sample and split sequences", unit="steps", enabled=data_cfg.get("progress", True)):
@@ -85,7 +108,7 @@ def select_records(data_cfg):
                               for label, capacity, count in zip(labels, capacities, counts)]
             sampled = [row for rows in sampled_groups for row in rows]
         else:
-            indices = sample_rng.choice(total_count, size=sample_count, replace=False)
+            indices = sample_rng.choice(unit_count, size=sample_count, replace=False)
             offsets = np.r_[0, np.cumsum([g["count"] for g in inventory])]
             group_indices = np.searchsorted(offsets[1:], indices, side="right")
             sampled = [record_at([inventory[int(group)]], int(index - offsets[group])) for index, group in zip(indices, group_indices)]
@@ -110,7 +133,11 @@ def select_records(data_cfg):
             order = split_rng.permutation(sample_count)
             train = [sampled[i] for i in order[:train_count]]
             val = [sampled[i] for i in order[train_count:]]
-    source_digest = hashlib.sha256()
+    source_counts = {"total": unit_count, "sampled": len(sampled), "train": len(train), "val": len(val)}
+    if slice_groups is not None:
+        train, val, sampled = [[(path.parent / name, label) for path, label in records for name in slice_groups[path]]
+                               for records in (train, val, sampled)]
+    source_digest = hashlib.sha256(b"source_csv_groups_v1" if slice_groups is not None else b"")
     source_digest.update(inventory_fingerprint.encode())
     with Progress("Check sampled files", len(sampled), unit="file", enabled=data_cfg.get("progress", True)) as progress:
         for path, label in sampled:
@@ -121,11 +148,13 @@ def select_records(data_cfg):
             source_digest.update(f"{path.relative_to(root).as_posix()}:{label}:{stat.st_size}:{stat.st_mtime_ns}\n".encode())
             progress.update()
     info = {"settings": cfg, "input": input_config(data_cfg.get("input")),
-            "total_count": total_count, "sampled_count": sample_count,
+            "total_count": total_count, "sampled_count": len(sampled),
             "train_count": len(train), "val_count": len(val),
             "source_fingerprint": source_digest.hexdigest(), "index_source": index_source,
             "algorithm_version": 2, "data_root": str(root),
             "sampled": [{"path": p.relative_to(root).as_posix(), "label": y} for p, y in sampled],
             "train": [{"path": p.relative_to(root).as_posix(), "label": y} for p, y in train],
             "val": [{"path": p.relative_to(root).as_posix(), "label": y} for p, y in val]}
+    if slice_groups is not None:
+        info.update(group_by="source_csv", source_counts=source_counts, algorithm_version=3)
     return {"train": train, "val": val, "all": sampled}, info

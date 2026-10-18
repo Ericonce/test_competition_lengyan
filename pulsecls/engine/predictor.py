@@ -50,6 +50,7 @@ class BasePredictor:
         # Folder inputs have no training data.yaml; the checkpoint defines their class/feature semantics.
         requested = pipeline["data_cfg"]
         if not use_checkpoint_data:
+            self.data_cfg["slicing"] = requested.get("slicing", {})
             if requested.get("features", self.data_cfg.get("features")) != self.data_cfg.get("features", requested.get("features")) or (configured_classes is None and int(requested.get("num_classes", self.checkpoint_num_classes)) != self.checkpoint_num_classes):
                 raise ValueError(
                     f"Split inference configuration does not match checkpoint {self.checkpoint_path}: "

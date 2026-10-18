@@ -177,6 +177,9 @@ def load_split_arrays(
         split_name = normalize_dataset_path(data_cfg[split_key])
         records = None
     sequence_length = int(data_cfg["sequence_length"])
+    sliced_length = data_cfg.get("slicing", {}).get("length")
+    if sliced_length is not None and sequence_length != sliced_length:
+        raise ValueError(f"Sliced data has length {sliced_length}; set sequence_length={sliced_length} in the entry")
     cache_dir = cache_directory(root, data_cfg)
     features = data_cfg.get("features", list(DEFAULT_FEATURES[:2]))
     length_policy = data_cfg.get("length_policy")
