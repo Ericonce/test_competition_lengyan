@@ -43,7 +43,7 @@ competition/
 ├── datasets/                         # 本地数据与各数据集自己的 data.yaml
 ├── results/                          # 建议保存权重、日志、指标、图片和推理 CSV
 ├── docs/                             # 各功能的中文详细文档
-├── tools/                            # 数据生成、可视化、NPU 性能检查等工具
+├── tools/                            # 格式转换、清洗、切片、可视化、NPU 检查
 ├── scripts/                          # 辅助处理、绘图、检查脚本；使用前检查适用数据
 ├── tests/                            # 自动化测试
 └── requirements_npu.txt              # 昇腾环境依赖版本记录
@@ -80,28 +80,29 @@ infer.py → PulseCLS.infer() → 合并配置 → Predictor
 
 ## 3. 比赛流程总览
 
-1. **整理比赛数据**：建立三通道 CSV 和 data.yaml，保存官方标签与内部编号的映射。
-2. **从整个带标签训练池中固定采样**：先选取一部分完整序列，再将这部分数据划分为训练集和验证集。
-3. **先选模型**：关闭数据增强，在相同采样、相同划分上比较候选模型，保留后续参与投票的模型。
-4. **再选增强方法**：针对入选模型比较无增强、单种增强、多种增强串联，确定每个模型的增强方案和训练参数。
-5. **全量训练投票成员**：将采样比例设为 1、训练比例设为 1、验证比例设为 0，分别从头训练所有入选模型，保留各自选定的增强方案。
-6. **投票推理并提交**：在现有 infer_vote.py 中加载各成员全量训练的权重，对官方测试集投票，再按官方模板整理提交文件。
+1. **拿到数据，确认格式**：将官方测试集单独保存；整理类别目录、CF/PW/PRI 表头与单位，保存标签编号映射。
+2. **清洗，再按需切片**：训练池和测试集分别清洗；训练池滑窗切成模型需要的长度，保留切片与原 CSV 的对应关系。
+3. **设置采样和划分，先选模型**：在训练入口填写 `dataset`；启动时自动采样并划分训练/验证，关闭增强比较候选模型。
+4. **再选增强方法**：固定同一批数据和划分，比较无增强、单种增强和串联组合，确定每个投票成员的参数。
+5. **各成员全量训练**：设置 `sample_ratio=1.0`、`train_ratio=1.0`、`val_ratio=0.0`，按选定轮数分别从头训练。
+6. **推理并提交**：先核对单模型结果，再用各成员的 `final_model.pt` 投票，按官方模板整理提交文件。
 
 ```text
 官方带标签训练池
-  → 固定采样一部分 → 划分训练/验证
+  → 整理格式 → 清洗 → 滑窗切片
+  → 训练启动时固定采样、按原 CSV 分组划分训练/验证
   → 关闭增强，比较模型 → 保留候选模型
   → 固定同一划分，比较增强方法和串联组合
   → 确定各投票成员的模型、增强、训练参数及主模型
   → 各成员分别在全部带标签数据上从头训练
-官方测试集 → 各成员 final_model.pt → 多模型投票 → 按官方模板提交
+官方测试集 → 同样清洗 → 各成员 final_model.pt → 多模型投票 → 按官方模板提交
 ```
 
 所有阶段复用现有 train/infer 入口和原 pipeline、模型 YAML，在调用中修改参数即可。模型筛选、增强筛选和全量训练需要手动分阶段运行，当前入口不会自动搜索或批量完成这些步骤。
 
-以下以 **CNN + Softmax、5 个类别**为范例。直接使用现有 `train/cnn_softmax_synthetic/train.py` 和 `infer/cnn_softmax_synthetic/infer.py`。`competition_radar`、`competition_radar_test` 是示例数据目录名称，`results/*competition*` 是示例结果目录；类别数、输入长度等按实际比赛修改。
+以下以 **CNN + Softmax、100 个类别、长度 256**为范例，直接修改现有 train/infer 入口。先激活运行环境（见第 4 节），下面命令都在仓库根目录执行。路径、类别数和长度按实际数据修改。
 
-### 3.1 整理主办方数据
+### 3.1 拿到数据：整理、清洗、切片
 
 带标签的训练数据整理为：
 
@@ -114,9 +115,8 @@ datasets/
 │   │   └── 1.csv
 │   ├── 1/
 │   │   └── 0.csv
-│   ├── 2/
-│   ├── 3/
-│   └── 4/
+│   ├── ...
+│   └── 99/
 └── competition_radar_test/            # 官方测试集：CSV 直接放在此目录
     ├── sample_0001.csv
     └── sample_0002.csv
@@ -137,17 +137,15 @@ CF_MHz,PW_us,PRI_us
 - 序列原始长度可以不同，加载时统一补长或裁剪；模型看到的输入为 `[批大小, 3, 固定长度]`。
 - 保留测试文件与官方样本 ID 的对应关系，避免转换格式后无法生成提交文件。
 
-有缺失或非法值时，先运行 `python tools/clean_csv.py --source datasets/competition_radar --output datasets/competition_clean`；需要按 IQR 检测异常尖峰时加 `--iqr 3`。原始文件保留，处理规则见[CSV 清洗说明](docs/DATA_INPUT_FORMATS.md#6-清洗缺失值和异常脉冲)。
+**① 整理格式和标签。** 已经是上面的类别目录时直接使用；平铺 CSV 加标签表、文件名标签或大表数据，先按[转换说明](docs/DATA_INPUT_FORMATS.md#1-选择转换命令)整理。转换器报坏值时，需先整理出独立样本 CSV 再清洗。下文假设训练池已放在 `datasets/competition_radar`。
 
-需要滑窗切片时，运行 `python tools/slice_csv.py --source datasets/competition_radar --output datasets/competition_sliced --length 256 --overlap 0.5`，再训练生成的 `data.yaml`；已清洗时把 `--source` 改为 `datasets/competition_clean`。支持类别训练目录和平铺测试目录；来源对应表、补长规则见[CSV 切片说明](docs/DATA_INPUT_FORMATS.md#5-将长短不一的-csv-切成固定长度)。
-
-在 `datasets/competition_radar/data.yaml` 写入：
+在该目录的 `data.yaml` 写入（工具生成过时核对即可）：
 
 ```yaml
 name: competition_radar
 root: .
 root_relative_to_yaml: true
-num_classes: 5
+num_classes: 100
 features:
   - CF_MHz
   - PW_us
@@ -156,27 +154,51 @@ cache: true
 all: .
 ```
 
-这里的路径解析为：`data.yaml 所在目录 / root / all`，即 `datasets/competition_radar/`。程序在该目录下查找数字类别子目录。`features` 指定读取的列及顺序；`cache` 开启缓存。`all` 表示待采样、划分的带标签总数据池，不包含官方测试集。
+`root: .` 表示本 YAML 所在目录，`all: .` 表示这里的类别文件夹组成训练总池。此时不用手工创建 train/val 文件夹；官方测试集另放目录，无需测试 `data.yaml`。
 
-`data.yaml` 只描述数据；内部训练/验证比例和使用总池的比例在 `model.train(dataset={...})` 中设置，覆盖 pipeline 默认值。官方测试集推理直接指定文件夹，不需要再创建测试 `data.yaml`。
-
-可以先检查原始序列和分布：
+**② 训练池、测试集分别清洗。** 输出目录须尚不存在；再次处理时换一个输出目录。
 
 ```bash
-python tools/visualize_dataset.py --data datasets/competition_radar/data.yaml --output-dir results/competition_data_preview
+python tools/clean_csv.py --source datasets/competition_radar --output datasets/competition_clean
+python tools/clean_csv.py --source datasets/competition_radar_test --output datasets/competition_test_clean
 ```
 
-### 3.2 选择现有入口，直接修改调用参数
+缺失、非数字、NaN/Inf、非正值和 `PW >= PRI` 的脉冲按整行插值修复，首尾用最近有效脉冲填充。原文件不变，文件名和脉冲数量保留；检查输出的 `_cleaning/report.csv`。需要检测统计异常尖峰时加 `--iqr 3`，默认关闭。空文件、缺列或没有有效脉冲时会报错，修正源文件后重跑。详见[清洗规则](docs/DATA_INPUT_FORMATS.md#6-清洗缺失值和异常脉冲)。
+
+**③ 将训练池切成定长窗口。** 每片 256 个脉冲、重叠 50%；短序列和不足一片的尾段默认补零，加 `--short repeat` 改为循环补长。
+
+```bash
+python tools/slice_csv.py --source datasets/competition_clean --output datasets/competition_sliced --length 256 --overlap 0.5
+```
+
+`--output` 同样须为新目录。输出保留类别目录，生成 `data.yaml` 和 `_slicing/manifest.csv`，清单记录每片来自哪个原 CSV。**先清洗、后切片**，补零后的切片不要再运行清洗脚本。详见[切片规则](docs/DATA_INPUT_FORMATS.md#5-将长短不一的-csv-切成固定长度)。
+
+后文统一使用：
+
+| 用途 | 路径 |
+| --- | --- |
+| 训练，以及单模型/投票成员的 `data` | `datasets/competition_sliced/data.yaml` |
+| 官方测试推理的 `source` | `datasets/competition_test_clean` |
+
+跳过清洗或切片时，把所有入口路径同步改为实际目录。示例测试集只清洗，推理时按长度策略裁剪/补长，每个原 CSV 输出一条预测；测试集若也滑窗，需自行按清单汇总成原 CSV 的一条预测后提交。
+
+可先查看清洗后的分布：
+
+```bash
+python tools/visualize_dataset.py --data datasets/competition_clean/data.yaml --output-dir results/competition_data_preview
+```
+
+### 3.2 设置入口参数和训练/验证划分
 
 例如使用 CNN 时，打开 `train/cnn_softmax_synthetic/train.py`，保留原来的 `pipeline=...cnn_softmax_synthetic.yaml`。该 pipeline 继续提供 CNN 的网络、损失和默认设置；显式传入的 `data` 会替换其中的数据 YAML 引用，加载时无需原合成数据集的 data.yaml 存在。
 
 | `model.train(...)` 中的参数 | 接入比赛数据时如何处理 |
 | --- | --- |
 | `pipeline` | 沿用当前模型的原路径，无需复制或改名 |
-| `data` | 改为比赛数据集的 data.yaml 路径 |
+| `data` | 本例为 `datasets/competition_sliced/data.yaml` |
 | `num_classes` | 与比赛类别数一致；原入口显式写了 100，不会自动随 data.yaml 改变 |
 | `output_dir` | 建议改为比赛实验目录，避免覆盖旧结果 |
-| `dataset` | 检查采样、训练/验证比例；使用全部训练池时设 `sample_ratio=1.0` |
+| `dataset` | 控制采样和训练/验证划分；固定 seed，各模型使用相同划分 |
 | `sequence_length`、`length_policy` | 设置固定长度、短序列补长和长序列裁剪策略 |
 | `epochs`、`batch_size`、`lr`、`labelsmooth` 等 | 按需要直接在训练调用中调整 |
 | `resume`、`resume_checkpoint` | 新数据集从头训练用 `resume=False`；续训时才加载对应任务的检查点 |
@@ -184,64 +206,51 @@ python tools/visualize_dataset.py --data datasets/competition_radar/data.yaml --
 
 **如果类别数及其他设置都适用，只改 `data` 路径就可以切换训练数据。** 如果类别数不同，必须同步修改显式的 `num_classes`，或设为 `None` 继承配置；pipeline 的训练类别数也为 null 时，才读取 data.yaml 的类别数。类别数设置不会筛选或重新编号标签；所有训练标签必须落在 `0..num_classes-1`。
 
-长度策略中，`short` 可用 `zero`（尾部补零）、`repeat`（循环重复）、`error`；`long` 可用 `head`（保留前段）、`center`（中心裁剪）、`error`。采样以完整 CSV 序列为单位，先采样再划分；`train_ratio + val_ratio` 须为 1。
+**划分在训练启动时自动执行，只记录清单，不复制出 train/val 目录。** 在 `model.train(...)` 中设置：
+
+```python
+dataset={"sample_ratio": 0.1, "train_ratio": 0.8, "val_ratio": 0.2,
+         "seed": 2026, "stratified": True},
+```
+
+先选总池的 10%，再按 8:2 划分。100 类、每类 8000 个原 CSV 时，共选 80000 个，其中训练 64000、验证 16000。滑窗后按**原 CSV**计数，同一原 CSV 的全部切片始终在同一组，实际切片数会不同；记录见 `dataset_selection.json`。比较模型时保持上述参数一致。
+
+上述设置适用于允许自行划分的训练池。官方固定划分或按采集批次、场景、实体分组时，应分别处理并保留边界；当前 `dataset` 会重新随机划分，需要先调整入口。测试数据始终单独保存。
+
+长度策略中，`short` 可用 `zero`、`repeat`、`error`；`long` 可用 `head`、`center`、`error`。切片长度、训练和推理的 `sequence_length` 均设为 256。归一化在训练内部进行，只使用训练集统计量，验证和推理复用。
 
 ### 3.3 第一阶段：固定采样，先选择模型
 
-在现有 `train/cnn_softmax_synthetic/train.py` 中修改参数，例如下面的完整范例。示例先从总池采样 **10%**，再将这部分数据按 **80% / 20%** 划分；比例是可调示例，不是固定要求。pipeline 保持原路径，常用设置直接传给 `model.train(...)`：
+在现有 `train/cnn_softmax_synthetic/train.py` 中修改 `model.train(...)`。沿用原文件的导入和 `main()`，调用范例：
 
 ```python
-import sys
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-from pulsecls import PulseCLS
-
-
-def main():
-    model = PulseCLS()
-    return model.train(
-        pipeline=PROJECT_ROOT / "configs/pipeline/cnn_softmax_synthetic.yaml",
-        data=PROJECT_ROOT / "datasets/competition_radar/data.yaml",
-        output_dir=PROJECT_ROOT / "results/competition/model_selection/cnn_softmax_noaug",
-        num_classes=5,
-        epochs=50,
-        batch_size=64,
-        lr=0.001,
-        labelsmooth=0.0,
-        visualize=True,
-        optimizer="adamw",
-        weight_decay=0.0001,
-        early_stopping_patience=6,
-        device="auto",
-        use_amp=True,
-        amp_dtype="float16",
-        num_workers=0,
-        seed=2026,
-        resume=False,
-        resume_checkpoint=PROJECT_ROOT / "results/competition/model_selection/cnn_softmax_noaug/last_model.pt",
-        sequence_length=256,
-        length_policy={"short": "zero", "long": "head"},
-        dataset={
-            "sample_ratio": 0.1,
-            "train_ratio": 0.8,
-            "val_ratio": 0.2,
-            "seed": 2026,
-            "stratified": True,
-        },
-        data_cfg={"cache": True, "progress": True},
-        augment={
-            "preset": PROJECT_ROOT / "configs/augment/default.yaml",
-            "enabled": False,
-        },
-    )
-
-
-if __name__ == "__main__":
-    main()
+model.train(
+    pipeline=PROJECT_ROOT / "configs/pipeline/cnn_softmax_synthetic.yaml",
+    data=PROJECT_ROOT / "datasets/competition_sliced/data.yaml",
+    output_dir=PROJECT_ROOT / "results/competition/model_selection/cnn_softmax_noaug",
+    num_classes=100,
+    epochs=50,
+    batch_size=64,
+    lr=0.001,
+    labelsmooth=0.0,
+    visualize=True,
+    optimizer="adamw",
+    weight_decay=0.0001,
+    early_stopping_patience=6,
+    device="npu:0",  # Windows 调试时用 cpu。
+    use_amp=True,
+    amp_dtype="float16",
+    num_workers=0,
+    seed=2026,
+    resume=False,
+    sequence_length=256,
+    length_policy={"short": "zero", "long": "head"},
+    normalization="zscore",
+    dataset={"sample_ratio": 0.1, "train_ratio": 0.8, "val_ratio": 0.2,
+             "seed": 2026, "stratified": True},
+    data_cfg={"cache": True, "progress": True},
+    augment={"preset": PROJECT_ROOT / "configs/augment/default.yaml", "enabled": False},
+)
 ```
 
 在项目根目录执行：
@@ -250,17 +259,13 @@ if __name__ == "__main__":
 python train/cnn_softmax_synthetic/train.py
 ```
 
-流程是：**建立文件索引 → 选择要使用的序列 → 划分训练/验证 → 读取所选 CSV → 统一长度 → 训练**，不会先加载全部 CSV 内容再采样。训练开启增强时，先在原始特征上增强，再用训练集统计量按通道标准化；验证和推理不执行随机增强，使用训练时计算的统计量。
+第一次可先设置 `epochs=1`、减小 `sample_ratio` 跑通流程，再按计划训练。训练启动时先索引和划分，再读取所选 CSV；开启增强时先增强、后归一化，验证和推理只使用训练集统计量。
 
 开跑时核对终端打印的设备、总样本数、采样数和训练/验证数量。现有入口的 `sample_ratio=0.01` 只使用总池的 1%；使用全部数据时改为 `1.0`。
 
-例如总池有 100,000 条序列，上述设置会选取 10,000 条，再分成约 8,000 条训练、2,000 条验证；其余 90,000 条不参与本阶段。采样规模应足够覆盖各类别的训练和验证样本，过少时应提高 `sample_ratio`。
-
 在其他候选模型的现有 train.py 中设置相同的 data.yaml、`dataset` 字典、标签映射和长度策略，并保持 `augment.enabled=False`。相同数据池和固定采样/划分设置使各模型使用相同序列；不要每换一个模型就换采样种子。
 
-每个实验使用独立 `output_dir`，例如 `results/competition/model_selection/cnn_softmax_noaug`、`results/competition/model_selection/resnet_softmax_noaug`。依据验证 Macro F1、训练/推理耗时及验证错误的互补性选择后续投票成员。可先保留 2～3 个候选，也可以按实际结果调整数量；不是只保留一个模型。
-
-上述示例适用于从官方带标签训练池中自行划分验证集。**如果比赛规定了固定验证集，或要求按采集批次、场景、辐射源实体分组划分，应按该规则配置数据入口和划分；本例按类别随机划分不保证这些分组隔离。** 官方测试集始终单独用于推理。不同模型比较时，可核对 `dataset_selection.json` 中的实际样本划分。
+每个实验使用独立 `output_dir`，例如 `results/competition/model_selection/cnn_softmax_noaug`、`results/competition/model_selection/resnet_softmax_noaug`。依据验证 Macro F1、训练/推理耗时及错误互补性保留 2～3 个候选，数量按结果调整。不同模型比较时，核对 `dataset_selection.json` 中的实际划分一致。
 
 当前最佳权重按**验证集 Macro F1**选择。若比赛使用其他评分规则，需要按官方指标评价方案，并相应调整选权重逻辑。
 
@@ -357,62 +362,48 @@ methods:
 
 ### 3.7 第四阶段：用全量训练权重进行投票推理
 
-直接修改现有 `infer/infer_vote.py`。保留其初始化方式，在 `model.infer_vote(...)` 中设置比赛测试目录、各成员权重及主模型，无需复制任何配置。下面以 CNN、ResNet、TCN 三个成员为例，**实际只启用已经筛选并完成全量训练的成员**：
+先修改现有 `infer/cnn_softmax_synthetic/infer.py` 的 `data`、`source`、`checkpoint`、类别数和设备，运行 `python infer/cnn_softmax_synthetic/infer.py` 核对单模型结果。
+
+再修改 `infer/infer_vote.py` 中的 `model.infer_vote(...)`。沿用原文件的初始化和 `main()`；下面以 CNN、ResNet、TCN 为例，**只启用已经筛选并完成全量训练的成员**：
 
 ```python
-import sys
-from pathlib import Path
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-from pulsecls import PulseCLS
-
-
-def main():
-    model = PulseCLS()
-    return model.infer_vote(
-        config=PROJECT_ROOT / "configs/inference/vote.yaml",
-        source=PROJECT_ROOT / "datasets/competition_radar_test",
-        output_dir=PROJECT_ROOT / "results/competition/infer_vote",
-        labels_file="",
-        main_model="cnn_softmax",
-        num_classes=5,
-        device="auto",
-        batch_size=256,
-        progress=True,
-        sequence_length=256,
-        length_policy={"short": "zero", "long": "head"},
-        augment={"preset": PROJECT_ROOT / "configs/augment/default.yaml"},
-        models=[
-            {
-                "name": "cnn_softmax",
-                "enabled": True,
-                "pipeline": PROJECT_ROOT / "configs/pipeline/cnn_softmax_synthetic.yaml",
-                "data": PROJECT_ROOT / "datasets/competition_radar/data.yaml",
-                "checkpoint": PROJECT_ROOT / "results/cnn_softmax_competition_final/final_model.pt",
-            },
-            {
-                "name": "resnet_softmax",
-                "enabled": True,
-                "pipeline": PROJECT_ROOT / "configs/pipeline/resnet_softmax_synthetic.yaml",
-                "data": PROJECT_ROOT / "datasets/competition_radar/data.yaml",
-                "checkpoint": PROJECT_ROOT / "results/resnet_softmax_competition_final/final_model.pt",
-            },
-            {
-                "name": "tcn",
-                "enabled": True,
-                "pipeline": PROJECT_ROOT / "configs/pipeline/tcn_synthetic.yaml",
-                "data": PROJECT_ROOT / "datasets/competition_radar/data.yaml",
-                "checkpoint": PROJECT_ROOT / "results/tcn_competition_final/final_model.pt",
-            },
-        ],
-    )
-
-
-if __name__ == "__main__":
-    main()
+model.infer_vote(
+    config=PROJECT_ROOT / "configs/inference/vote.yaml",
+    source=PROJECT_ROOT / "datasets/competition_test_clean",
+    output_dir=PROJECT_ROOT / "results/competition/infer_vote",
+    labels_file="",
+    main_model="cnn_softmax",
+    num_classes=100,
+    device="npu:0",  # Windows 调试时用 cpu。
+    batch_size=256,
+    progress=True,
+    sequence_length=256,
+    length_policy={"short": "zero", "long": "head"},
+    augment={"preset": PROJECT_ROOT / "configs/augment/default.yaml"},
+    models=[
+        {
+            "name": "cnn_softmax",
+            "enabled": True,
+            "pipeline": PROJECT_ROOT / "configs/pipeline/cnn_softmax_synthetic.yaml",
+            "data": PROJECT_ROOT / "datasets/competition_sliced/data.yaml",
+            "checkpoint": PROJECT_ROOT / "results/cnn_softmax_competition_final/final_model.pt",
+        },
+        {
+            "name": "resnet_softmax",
+            "enabled": True,
+            "pipeline": PROJECT_ROOT / "configs/pipeline/resnet_softmax_synthetic.yaml",
+            "data": PROJECT_ROOT / "datasets/competition_sliced/data.yaml",
+            "checkpoint": PROJECT_ROOT / "results/resnet_softmax_competition_final/final_model.pt",
+        },
+        {
+            "name": "tcn",
+            "enabled": True,
+            "pipeline": PROJECT_ROOT / "configs/pipeline/tcn_synthetic.yaml",
+            "data": PROJECT_ROOT / "datasets/competition_sliced/data.yaml",
+            "checkpoint": PROJECT_ROOT / "results/tcn_competition_final/final_model.pt",
+        },
+    ],
+)
 ```
 
 在项目根目录执行：
@@ -421,7 +412,7 @@ if __name__ == "__main__":
 python infer/infer_vote.py
 ```
 
-- `source` 是官方测试 CSV 的平铺文件夹，不需要测试 data.yaml。
+- `source` 本例为清洗后的官方测试 CSV 平铺文件夹，不需要测试 data.yaml；各样本文件名与原测试集一致。
 - 每个成员的 `data` 指向比赛训练任务的描述文件，覆盖原 pipeline 中的合成数据引用；配置解析仍需要该 data.yaml、原模型 YAML 和增强 YAML 存在，但不会读取训练 CSV。
 - `checkpoint` 指向该成员正式全量训练产生的 `final_model.pt`。关闭没有训练好的成员，不要混入旧任务权重。
 - `main_model` 必须与某个已启用成员的 `name` 一致，根据前面验证阶段结果选择；范例中的 CNN 仅为占位选择。
@@ -432,8 +423,6 @@ python infer/infer_vote.py
 投票选择票数最多的类别。最高票并列时，主模型预测若在并列候选中就优先选它；若主模型预测不在最高票候选中，则按当前实现选择其中编号最小的类别。所有模型预测都不同时，采用主模型预测。
 
 官方测试集没有公开标签时，保持 `labels_file=""`，只推理。若对独立有标签数据进行评估，可填写标签 TXT 路径，每行 `文件名.csv 类别整数`。不应使用官方隐藏测试结果反复筛选方案。详细输出见[推理与投票说明](docs/INFERENCE_AND_TEST_DATA.md)。
-
-如需单独检查某个成员，也可使用其现有 `infer/<方法名>_synthetic/infer.py`，修改 data、source、checkpoint 和类别数；正式提交流程使用上述投票入口。
 
 训练和推理的 `data` 都指向本次比赛数据的 `data.yaml`。更换数据后同步修改推理入口及投票成员的 `data`，配置解析就无需原合成数据目录。通用 `infer/infer.py` 也支持 `--data 数据目录/data.yaml`。
 
