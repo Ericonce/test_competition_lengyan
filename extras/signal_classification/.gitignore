@@ -1,0 +1,13 @@
+# Data and generated artifacts belong to this standalone project.
+/dataset/
+/datasets/
+/raw_data/
+/result/
+/results/
+/outputs/
+/logs/
+/weights/
+/checkpoints/
+/data_process/pdw_analysis/
+*.h5
+*.hdf5
