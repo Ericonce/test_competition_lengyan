@@ -148,3 +148,18 @@ python tools/slice_csv.py --source datasets/competition_radar_test --output data
 训练入口改为 `data="datasets/competition_sliced/data.yaml"`、`sequence_length=256`；需要全量数据时设 `dataset.sample_ratio=1.0`。采样与训练/验证划分自动以**原 CSV** 为单位，同一个原 CSV 的所有切片进入同一组；比例按原文件数计算，切片数量比例可能不同。划分记录保存在训练结果的 `dataset_selection.json` 中。
 
 测试入口改为 `source="datasets/competition_test_sliced"`，输入长度与训练一致。预测 CSV 中的 `filename` 对应清单的 `slice_csv`；按 `source_csv` 分组即可找到同一原样本的全部切片，供后续投票。当前预测仍是一片一行，尚未自动合并成原 CSV 的最终预测；不要把切片行直接作为官方原样本结果提交。
+
+## 6. 清洗缺失值和异常脉冲
+
+对类别训练目录或平铺测试目录执行，放在切片之前。每个 CSV 对应一个样本，使用原有 CF/PW/PRI 表头及单位：
+
+```shell
+python tools/clean_csv.py --source datasets/competition_radar --output datasets/competition_clean
+python tools/clean_csv.py --source datasets/competition_radar_test --output datasets/competition_test_clean
+```
+
+- 空值、非数字、NaN/Inf、float32 溢出或下溢为零、非正值、`PW >= PRI` 均标记为坏脉冲。一个特征损坏时，三个特征整行一起修复。
+- 用同一 CSV 中相邻有效脉冲做线性插值；开头、末尾用最近有效脉冲填充，只有一个有效脉冲时重复该脉冲。文件名、类别目录、脉冲数量与顺序保留，输出统一为 `CF_MHz,PW_us,PRI_us` 三列，不保留额外列。
+- 可加 `--iqr 3`，将任一特征超出 `[Q25-3×IQR, Q75+3×IQR]` 的脉冲也标记并插值。分位数按每个 CSV 的有效脉冲计算，少于 4 个时跳过；IQR 为零时偏离该常量的值也会被标记。默认 `--iqr 0` 关闭统计筛选，正常跳频或多峰分布可保留该默认值。
+- 原文件不变，输出必须为原目录之外的新目录。`_cleaning/report.csv` 记录每个样本的总脉冲数、非法脉冲数、统计异常数和修复数；`summary.json` 保存来源及 IQR 参数。缺少特征列、空样本或没有有效脉冲可供插值时会报错，本次输出整体撤销，不跳过样本。
+- 训练目录生成可移动的 `data.yaml`，测试目录的 `labels.txt` 原样复制。可继续切片并使用生成的 YAML；直接训练时改为 `data="datasets/competition_clean/data.yaml"`，直接推理时改为 `source="datasets/competition_test_clean"`。官方训练/验证目录分别清洗，保留原来的划分。

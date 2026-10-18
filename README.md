@@ -137,7 +137,9 @@ CF_MHz,PW_us,PRI_us
 - 序列原始长度可以不同，加载时统一补长或裁剪；模型看到的输入为 `[批大小, 3, 固定长度]`。
 - 保留测试文件与官方样本 ID 的对应关系，避免转换格式后无法生成提交文件。
 
-需要滑窗切片时，先运行 `python tools/slice_csv.py --source datasets/competition_radar --output datasets/competition_sliced --length 256 --overlap 0.5`，再训练生成的 `data.yaml`。支持类别训练目录和平铺测试目录；来源对应表、补长规则见[CSV 切片说明](docs/DATA_INPUT_FORMATS.md#5-将长短不一的-csv-切成固定长度)。
+有缺失或非法值时，先运行 `python tools/clean_csv.py --source datasets/competition_radar --output datasets/competition_clean`；需要按 IQR 检测异常尖峰时加 `--iqr 3`。原始文件保留，处理规则见[CSV 清洗说明](docs/DATA_INPUT_FORMATS.md#6-清洗缺失值和异常脉冲)。
+
+需要滑窗切片时，运行 `python tools/slice_csv.py --source datasets/competition_radar --output datasets/competition_sliced --length 256 --overlap 0.5`，再训练生成的 `data.yaml`；已清洗时把 `--source` 改为 `datasets/competition_clean`。支持类别训练目录和平铺测试目录；来源对应表、补长规则见[CSV 切片说明](docs/DATA_INPUT_FORMATS.md#5-将长短不一的-csv-切成固定长度)。
 
 在 `datasets/competition_radar/data.yaml` 写入：
 
