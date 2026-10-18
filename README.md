@@ -43,7 +43,13 @@ competition/
 ├── datasets/                         # 本地数据与各数据集自己的 data.yaml
 ├── results/                          # 建议保存权重、日志、指标、图片和推理 CSV
 ├── docs/                             # 各功能的中文详细文档
-├── tools/                            # 格式转换、清洗、切片、可视化、NPU 检查
+├── tools/
+│   ├── convert_dataset.py            # 标签表/文件名标签/大表 → 类别文件夹
+│   ├── clean_csv.py                  # 缺失值、非法脉冲修复，可选 IQR 异常检测
+│   ├── slice_csv.py                  # 定长滑窗切片、补长、记录原 CSV 来源
+│   ├── visualize_dataset.py          # 离线查看序列、特征分布和类别统计
+│   ├── generate_synthetic_radar*.py   # 生成开发测试数据
+│   └── ...                          # Windows 调试、NPU 检查等辅助工具
 ├── scripts/                          # 辅助处理、绘图、检查脚本；使用前检查适用数据
 ├── tests/                            # 自动化测试
 └── requirements_npu.txt              # 昇腾环境依赖版本记录
@@ -62,6 +68,18 @@ infer.py → PulseCLS.infer() → 合并配置 → Predictor
 ```
 
 更详细的模块关系见[项目结构](docs/PROJECT_STRUCTURE.md)。
+
+比赛数据相关功能可直接按下面的入口查找：
+
+| 功能 | 入口 | 运行时机与结果 |
+| --- | --- | --- |
+| 格式转换 | `tools/convert_dataset.py` | 收到其他格式的带标签数据时运行，输出 `类别/*.csv` 和 `data.yaml`。 |
+| 数据清洗 | `tools/clean_csv.py` | 切片之前运行，修复坏脉冲，输出新 CSV 和逐文件清洗记录。 |
+| 定长切片 | `tools/slice_csv.py` | 原始 CSV 长度不同时运行，输出定长 CSV 和来源清单。 |
+| 数据可视化 | `tools/visualize_dataset.py` | 检查样本、长度和分布，输出离线图片、统计表与本地汇总页。 |
+| 特征归一化 | `model.train(normalization=...)`；实现位于 `pulsecls/utils/normalization.py` | 训练内部执行，支持六种方案；权重保存参数，推理自动复用。 |
+
+转换、清洗、切片的具体命令见 **3.1**；采样划分和归一化设置见 **3.2**。清洗和切片保留物理单位，归一化通过训练参数选择，无需另外生成一份归一化 CSV。
 
 ## 2. 参数在哪里设置
 
@@ -137,7 +155,90 @@ CF_MHz,PW_us,PRI_us
 - 序列原始长度可以不同，加载时统一补长或裁剪；模型看到的输入为 `[批大小, 3, 固定长度]`。
 - 保留测试文件与官方样本 ID 的对应关系，避免转换格式后无法生成提交文件。
 
-**① 整理格式和标签。** 已经是上面的类别目录时直接使用；平铺 CSV 加标签表、文件名标签或大表数据，先按[转换说明](docs/DATA_INPUT_FORMATS.md#1-选择转换命令)整理。转换器报坏值时，需先整理出独立样本 CSV 再清洗。下文假设训练池已放在 `datasets/competition_radar`。
+**① 格式转换：`tools/convert_dataset.py`。** 已经是上面的类别目录时跳过转换。其他三种组织方式按下面对应的一种处理，输出都使用 `datasets/competition_radar`；各模板的 `num_classes`、`features` 也要与实际数据一致。
+
+**A. 所有样本平铺，标签单独保存。** 例如原始目录中有 `a.csv`、`b.csv` 和下面的 `labels.csv`：
+
+```csv
+filename,label
+a.csv,17
+b.csv,42
+```
+
+在现有 `configs/data/label_file.yaml` 中修改这些字段，其余字段保留：
+
+```yaml
+root: datasets/competition_raw
+input:
+  format: label_file
+  files: .
+  labels_file: labels.csv
+  filename_column: filename
+  label_column: label
+```
+
+```bash
+python tools/convert_dataset.py --data configs/data/label_file.yaml --output datasets/competition_radar
+```
+
+按文件名匹配标签并复制到类别目录，例如 `17/a.csv`。`files` 是样本所在子目录，`labels_file` 是标签表；两者都相对于 `root`。标签表顺序任意，缺失、重复或多余的标签会报错。
+
+**B. 类别写在文件名里。** 例如 `class17_sample002.csv` 属于类别 17。在 `configs/data/filename.yaml` 中修改：
+
+```yaml
+root: datasets/competition_raw
+input:
+  format: filename
+  files: .
+  pattern: '*.csv'
+  filename_regex: 'class(?P<label>\d+)_.*\.csv'
+```
+
+```bash
+python tools/convert_dataset.py --data configs/data/filename.yaml --output datasets/competition_radar
+```
+
+`(?P<label>...)` 提取类别编号；文件命名为 `17_002.csv` 时，将正则改成 `'(?P<label>\d+)_\d+\.csv'`。复制后保留文件名，无法匹配的文件会报错。
+
+**C. 多个样本合在一张大表中。** 目前支持每行一个脉冲、带样本 ID 和标签的长表，例如 `samples.csv`：
+
+```csv
+sample_id,label,pulse_index,CF_MHz,PW_us,PRI_us
+a,17,0,3500,12,500
+a,17,1,3501,12.2,501
+b,42,0,4000,10,600
+```
+
+在 `configs/data/table.yaml` 中修改：
+
+```yaml
+root: datasets/competition_raw
+input:
+  format: table
+  table_file: samples.csv
+  sample_id_columns: [sample_id]
+  label_column: label
+  order_column: pulse_index
+```
+
+```bash
+python tools/convert_dataset.py --data configs/data/table.yaml --output datasets/competition_radar
+```
+
+同一 `sample_id` 的行合成一个 CSV，并按 `pulse_index` 排序；`order_column: null` 时保留出现顺序。类别之间复用样本 ID 时设 `sample_id_columns: [label, sample_id]`。一行展开一整条序列、缺少样本 ID 等其他大表格式，需要先按字段整理。
+
+三种转换均保留原始文件，输出目录须尚不存在，并位于原始数据目录之外。原标签为 1～100 时，在对应模板的 `input` 下加 `label_offset: -1`；文字标签可用 `label_map: {radar_A: 0, radar_B: 1}`。后续提交预测时按保存的映射还原官方标签。
+
+| 转换输出 | 内容与用途 |
+| --- | --- |
+| `0/*.csv`、`1/*.csv` 等 | 实际供训练读取的类别目录；独立 CSV 按标签复制，大表按完整样本拆分。 |
+| `data.yaml` | 转换后的数据入口，使用相对路径，可随数据目录移动。 |
+| `conversion_manifest.csv` | `source`、`label`、`output_path`、`num_pulses`，核对原样本与新路径。 |
+| `conversion_summary.json` | 原始输入配置、标签映射、样本数和各类别数量。 |
+
+转换会校验 CSV，空文件、缺列、非数字或 NaN/Inf 会报错并撤销本次输出。若独立样本 CSV 已有坏值，先把样本单独放在 `root/samples`，清洗到 `root/clean_samples`，再把模板的 `input.files` 改为 `clean_samples`；标签表保留在 `root`，文件名保持对应。长表中的坏值需先按样本整理后再清洗。TSV、TXT 标签及其他字段见[完整格式说明](docs/DATA_INPUT_FORMATS.md)。
+
+下文假设训练池已整理到 `datasets/competition_radar`。
 
 在该目录的 `data.yaml` 写入（工具生成过时核对即可）：
 
@@ -156,22 +257,69 @@ all: .
 
 `root: .` 表示本 YAML 所在目录，`all: .` 表示这里的类别文件夹组成训练总池。此时不用手工创建 train/val 文件夹；官方测试集另放目录，无需测试 `data.yaml`。
 
-**② 训练池、测试集分别清洗。** 输出目录须尚不存在；再次处理时换一个输出目录。
+**② 数据清洗：`tools/clean_csv.py`。** 训练池、测试集分别处理。输入是类别文件夹或每个 CSV 为一个样本的平铺目录；放在切片之前执行。
 
 ```bash
 python tools/clean_csv.py --source datasets/competition_radar --output datasets/competition_clean
 python tools/clean_csv.py --source datasets/competition_radar_test --output datasets/competition_test_clean
 ```
 
-缺失、非数字、NaN/Inf、非正值和 `PW >= PRI` 的脉冲按整行插值修复，首尾用最近有效脉冲填充。原文件不变，文件名和脉冲数量保留；检查输出的 `_cleaning/report.csv`。需要检测统计异常尖峰时加 `--iqr 3`，默认关闭。空文件、缺列或没有有效脉冲时会报错，修正源文件后重跑。详见[清洗规则](docs/DATA_INPUT_FORMATS.md#6-清洗缺失值和异常脉冲)。
+| 参数 | 作用 |
+| --- | --- |
+| `--source` | 原始样本目录，保留不变；每个 CSV 对应一条完整序列。 |
+| `--output` | 新的清洗结果目录，须尚不存在，并位于原目录之外。 |
+| `--iqr` | 默认 `0`，关闭统计筛选；例如 `3` 启用逐 CSV 的 IQR 异常检测。 |
+| `--no-progress` | 关闭终端进度条，可选。 |
 
-**③ 将训练池切成定长窗口。** 每片 256 个脉冲、重叠 50%；短序列和不足一片的尾段默认补零，加 `--short repeat` 改为循环补长。
+默认检测空单元格、非数字文本、NaN/Inf、float32 溢出或下溢为零、CF/PW/PRI 非正值，以及 `PW >= PRI`。**任意一个特征损坏时，把这个脉冲的三个特征整行一起修复**，文件名、类别目录、脉冲数量和顺序保留。
+
+修复使用同一 CSV 内前后有效脉冲做线性插值。例如：
+
+| 脉冲位置 | 原载频/脉宽/PRI | 清洗后 |
+| --- | --- | --- |
+| 1 | `3000,10,100` | 保持不变 |
+| 2 | `缺失,11,105` | `3100,12,110` |
+| 3 | `3200,14,120` | 保持不变 |
+
+连续坏行按位置等比例插值；开头、末尾用最近有效脉冲填充。只剩一个有效脉冲时用它填充坏行；没有有效脉冲、空文件或缺少特征列时会报错并撤销本次输出，不会跳过样本。
+
+需要额外处理数值有限的尖峰时，在上述命令末尾加 `--iqr 3`。程序先排除非法脉冲，再对每个 CSV 的各特征计算 `IQR=Q75-Q25`；任一特征超出 `[Q25-3×IQR, Q75+3×IQR]` 时，将该脉冲标记后插值。少于 4 个有效脉冲时跳过统计筛选，IQR 为零时偏离该常量的值也会被标记。正常跳频、多峰或长尾分布可保持默认 `--iqr 0`，按同一验证集确认是否启用。
+
+| 清洗输出 | 内容与用途 |
+| --- | --- |
+| 原文件名的 CSV | 统一输出 `CF_MHz,PW_us,PRI_us` 三列，保留物理单位，不保留额外列。 |
+| `_cleaning/report.csv` | `file`、`rows`、`invalid_rows`、`outlier_rows`、`repaired_rows`，逐文件核对修改量。 |
+| `_cleaning/summary.json` | 来源目录、处理文件数、总修复脉冲数、IQR 参数。 |
+| `data.yaml` / `labels.txt` | 类别目录生成可移动的 YAML；平铺测试目录已有的 `labels.txt` 原样复制。 |
+
+先检查修复量是否符合预期，再进入后续训练。补零后的切片不要再清洗，以免把填充零识别为坏脉冲。详见[清洗规则](docs/DATA_INPUT_FORMATS.md#6-清洗缺失值和异常脉冲)。
+
+**③ 定长切片：`tools/slice_csv.py`。** 将几百、几千、几万个脉冲的原 CSV 转成统一长度的多个窗口。训练数据保持类别文件夹，平铺测试目录也支持切片：
 
 ```bash
 python tools/slice_csv.py --source datasets/competition_clean --output datasets/competition_sliced --length 256 --overlap 0.5
 ```
 
-`--output` 同样须为新目录。输出保留类别目录，生成 `data.yaml` 和 `_slicing/manifest.csv`，清单记录每片来自哪个原 CSV。**先清洗、后切片**，补零后的切片不要再运行清洗脚本。详见[切片规则](docs/DATA_INPUT_FORMATS.md#5-将长短不一的-csv-切成固定长度)。
+| 参数 | 作用 |
+| --- | --- |
+| `--source` / `--output` | 完整原 CSV 目录 / 新的切片目录；输出须尚不存在，并位于原目录之外。 |
+| `--length 256` | 每片的脉冲数，也是后续模型的 `sequence_length`。 |
+| `--overlap 0.5` | 重叠比例，范围 `[0,1)`；`0` 无重叠，`0.5` 重叠 50%。 |
+| `--short zero` | 默认补零；换成 `--short repeat` 时循环重复该片已有脉冲。 |
+
+步长为 `length - int(length × overlap)`。上面的设置步长 128；400 个脉冲的 CSV 会生成 `[0,256)`、`[128,384)`、`[256,400)` 三片，最后一片保留 144 个真实脉冲，再补长到 256。覆盖末尾后停止；整条原 CSV 不足一片时也会保留并补长。
+
+输出命名为 `原文件名__slice000000.csv`，不改变原始文件。训练目录同时生成 `data.yaml`，并自动启用按原文件分组划分；测试目录不生成训练 YAML。
+
+| `_slicing/manifest.csv` 字段 | 含义 |
+| --- | --- |
+| `slice_csv` / `source_csv` | 切片相对路径 / 完整原 CSV 的相对路径。 |
+| `slice_index` | 同一原 CSV 内的切片序号，从 0 开始。 |
+| `start_row` / `stop_row` | 原序列中覆盖的 `[起始,终止)` 行号，从 0 开始、不含表头。 |
+| `valid_length` / `source_length` | 本片真实脉冲数 / 原 CSV 总脉冲数，用于区分补长部分。 |
+| `label` | 类别编号；无标签测试集为空。 |
+
+`_slicing/summary.json` 保存原文件数、总切片数、长度、重叠比例、步长和补长方式。**同一原 CSV 的切片在训练/验证中始终归入同一组**，避免同一个样本的相似切片进入两侧。训练完成后也可用来源清单找到同一原 CSV 的全部切片，供结果汇总。详见[切片规则](docs/DATA_INPUT_FORMATS.md#5-将长短不一的-csv-切成固定长度)。
 
 后文统一使用：
 
@@ -182,13 +330,23 @@ python tools/slice_csv.py --source datasets/competition_clean --output datasets/
 
 跳过清洗或切片时，把所有入口路径同步改为实际目录。示例测试集只清洗，推理时按长度策略裁剪/补长，每个原 CSV 输出一条预测；测试集若也滑窗，需自行按清单汇总成原 CSV 的一条预测后提交。
 
-可先查看清洗后的分布：
+**④ 数据可视化：`tools/visualize_dataset.py`。** 查看清洗后的原始序列、CF/PW/PRI 分布、序列长度和类别样本量，输出静态图片和本地汇总页，可离线使用：
 
 ```bash
 python tools/visualize_dataset.py --data datasets/competition_clean/data.yaml --output-dir results/competition_data_preview
 ```
 
-### 3.2 设置入口参数和训练/验证划分
+| 常用参数 | 默认值与作用 |
+| --- | --- |
+| `--data` / `--output-dir` | 数据 YAML / 输出目录，本例结果在 `results/competition_data_preview`。 |
+| `--classes 0 1 2` | 只分析指定类别；不传时分析所有可用类别。 |
+| `--sequences-per-class` / `--max-sequences` | 默认每类抽 20 条、总计最多 2000 条，控制读入量。 |
+| `--plot-classes` / `--examples-per-class` | 默认图中展示最多 8 类、每类 2 条代表序列。 |
+| `--seed` / `--dpi` | 默认 2026 / 300，控制固定抽样和图片分辨率。 |
+
+完成后用浏览器打开输出目录的 `index.html` 查看汇总，或直接看 PNG；`class_counts.csv` 记录类别数量，`sequence_stats.csv` 记录每条抽样序列的长度、均值、标准差、最小/最大值，`sampled_pulses.csv` 保存绘图抽样点，`analysis_summary.json` 保存抽样配置和汇总。统计使用抽中 CSV 的完整原始序列，分布图使用抽样脉冲；不会改写样本或代替训练划分。
+
+### 3.2 设置入口参数、采样划分和归一化
 
 例如使用 CNN 时，打开 `train/cnn_softmax_synthetic/train.py`，保留原来的 `pipeline=...cnn_softmax_synthetic.yaml`。该 pipeline 继续提供 CNN 的网络、损失和默认设置；显式传入的 `data` 会替换其中的数据 YAML 引用，加载时无需原合成数据集的 data.yaml 存在。
 
@@ -200,24 +358,72 @@ python tools/visualize_dataset.py --data datasets/competition_clean/data.yaml --
 | `output_dir` | 建议改为比赛实验目录，避免覆盖旧结果 |
 | `dataset` | 控制采样和训练/验证划分；固定 seed，各模型使用相同划分 |
 | `sequence_length`、`length_policy` | 设置固定长度、短序列补长和长序列裁剪策略 |
+| `normalization` | 三个特征共用同一方案、各自统计参数；默认 `zscore`，可切换六种方案 |
 | `epochs`、`batch_size`、`lr`、`labelsmooth` 等 | 按需要直接在训练调用中调整 |
 | `resume`、`resume_checkpoint` | 新数据集从头训练用 `resume=False`；续训时才加载对应任务的检查点 |
 | `augment` | 在调用中设置总开关、方法、阈值及顺序；未覆盖的字段继承增强 YAML |
 
 **如果类别数及其他设置都适用，只改 `data` 路径就可以切换训练数据。** 如果类别数不同，必须同步修改显式的 `num_classes`，或设为 `None` 继承配置；pipeline 的训练类别数也为 null 时，才读取 data.yaml 的类别数。类别数设置不会筛选或重新编号标签；所有训练标签必须落在 `0..num_classes-1`。
 
-**划分在训练启动时自动执行，只记录清单，不复制出 train/val 目录。** 在 `model.train(...)` 中设置：
+**① 采样与划分。** 训练启动时自动执行，只记录清单，不复制出 train/val 目录。在 `model.train(...)` 中设置：
 
 ```python
 dataset={"sample_ratio": 0.1, "train_ratio": 0.8, "val_ratio": 0.2,
          "seed": 2026, "stratified": True},
 ```
 
+| 参数 | 含义 |
+| --- | --- |
+| `sample_ratio` | 从完整训练池选用多少原样本，`0.1` 为 10%，`1.0` 为全部。 |
+| `train_ratio` / `val_ratio` | 对已选样本进行训练/验证划分，两者之和为 1。 |
+| `seed` | 固定数据采样和划分；与模型训练的随机种子分开。 |
+| `stratified` | `True` 按类别分层分配，尽量保持类别比例；样本过少时提高采样比例。 |
+
 先选总池的 10%，再按 8:2 划分。100 类、每类 8000 个原 CSV 时，共选 80000 个，其中训练 64000、验证 16000。滑窗后按**原 CSV**计数，同一原 CSV 的全部切片始终在同一组，实际切片数会不同；记录见 `dataset_selection.json`。比较模型时保持上述参数一致。
 
 上述设置适用于允许自行划分的训练池。官方固定划分或按采集批次、场景、实体分组时，应分别处理并保留边界；当前 `dataset` 会重新随机划分，需要先调整入口。测试数据始终单独保存。
 
-长度策略中，`short` 可用 `zero`、`repeat`、`error`；`long` 可用 `head`、`center`、`error`。切片长度、训练和推理的 `sequence_length` 均设为 256。归一化在训练内部进行，只使用训练集统计量，验证和推理复用。
+长度策略中，`short` 可用 `zero`、`repeat`、`error`；`long` 可用 `head`、`center`、`error`。切片长度、训练和推理的 `sequence_length` 均设为 256。移动切片数据时，将 `data.yaml` 和 `_slicing/` 清单一起保留，维持原样本分组。
+
+**② 特征归一化。** 这部分已集成在所有模型共用的训练器里，通过 `normalization` 参数选择，实现位于 `pulsecls/utils/normalization.py`。三个通道分别计算统计量，例如载频减载频均值、除以载频标准差，脉宽和 PRI 各用自己的参数。
+
+| `normalization` | 计算方式 | 作用 |
+| --- | --- | --- |
+| `"zscore"` | `(x-mean)/std` | 默认方案，按训练均值和标准差标准化。 |
+| `"minmax"` | `(x-min)/(max-min)` | 默认缩放到 `[0,1]`，可设置其他范围。 |
+| `"maxabs"` | `x/max(abs(x))` | 按训练最大绝对值缩放，保留零点。 |
+| `"robust"` | `(x-median)/(Q75-Q25)` | 用中位数和四分位距缩放，减少极端值对统计量的影响。 |
+| `"log_zscore"` | 先做 `sign(x)*log(1+abs(x))`，再 Z-score | 先压缩数值跨度，再拟合均值和标准差。 |
+| `"none"` | `x` | 保留原始数值，便于对照实验。 |
+
+在现有训练入口的 `model.train(...)` 中修改这一项即可，例如选择最大最小归一化：
+
+```python
+normalization="minmax",
+```
+
+需要详细设置时，将同一项改成字典。下面两种写法选择一种：
+
+```python
+# Min-Max 缩放到 [-1,1]，并将超出训练范围的数值限制在此范围内。
+normalization={"method": "minmax", "feature_range": [-1, 1], "clip": True},
+```
+
+```python
+# Robust 改用第 10～90 百分位的间距。
+normalization={"method": "robust", "quantile_range": [10, 90]},
+```
+
+`eps` 默认 `1e-6`，作为分母下限，防止恒定通道除零。Min-Max 的 `clip` 默认 `False`，此时验证/测试值超出训练最小最大值时，结果也可超出目标范围；开启后才限制范围。Robust 保留异常点，清洗脚本的 IQR 才负责检测并修复异常脉冲。
+
+统计只使用本次采样、划分后的**训练集有效脉冲**，不使用验证集或测试集。配置 `short: zero` 时，补零行不参与统计，变换后保持为零；重叠窗口或循环补长中的重复脉冲会参与训练统计。训练先在物理数值上做增强，再应用固定归一化参数；验证和推理直接使用这些参数。
+
+| 归一化输出 | 用途 |
+| --- | --- |
+| 结果目录的 `normalization.json`、`normalization.npz` | 查看实际采用的方案、偏移、缩放和训练统计量。 |
+| 各模型权重中的 `normalization` 字段 | 单模型推理、投票成员及续训自动还原同一变换。 |
+
+切换方案做对照时设 `resume=False`，使用独立 `output_dir` 重新训练；续训会恢复原权重的方案。原始 CSV 和缓存保持物理数值，无需另存一份归一化数据。全局默认值在 `pulsecls/cfg/default.yaml`，入口显式参数优先；完整字段见[归一化说明](docs/NORMALIZATION.md)。
 
 ### 3.3 第一阶段：固定采样，先选择模型
 
@@ -469,7 +675,7 @@ python train/cnn_softmax_synthetic/train.py
 
 `requirements_npu.txt` 是昇腾环境的依赖版本记录，包含平台相关包，应按目标服务器环境核对；CUDA 环境不应直接照搬其中的昇腾软件栈。昇腾 Transformer/TCN 适配与实测说明见[昇腾性能记录](docs/ASCEND_PERFORMANCE_20261015.md)。
 
-三个特征默认按训练集统计做 Z-score。可在现有 `model.train(...)` 中设置 `normalization="minmax"`，也支持 `maxabs`、`robust`、`log_zscore` 和 `none`；Min-Max 可配置 `[0,1]` 或 `[-1,1]`。推理和续训自动读取权重中的方案，详见[归一化设置](docs/NORMALIZATION.md)。
+归一化的六种方案、参数和输出文件见 **3.2**；它由训练器自动执行，切换数据和运行设备时仍沿用同一套接口。
 
 数据集、权重和结果已被 `.gitignore` 忽略，从 GitHub 下载代码后需要自行准备比赛数据与可用权重。迁移机器时，检查所有自定义路径和运行环境。
 
@@ -494,6 +700,7 @@ python tools/generate_synthetic_radar_test.py
 - [将标签表、文件名标签、大表转换为类别目录后训练](docs/DATA_INPUT_FORMATS.md)
 - [训练参数与配置覆盖](docs/TRAIN_CONFIGURATION.md)
 - [采样与训练/验证划分](docs/DATASET_SELECTION.md)
+- [六种特征归一化方案与参数](docs/NORMALIZATION.md)
 - [训练输出文件、指标与图片](docs/TRAINING_OUTPUTS.md)
 - [数据增强方法、阈值与顺序](docs/DATA_AUGMENTATION.md)
 - [数据集可视化工具](docs/DATA_VISUALIZATION.md)
